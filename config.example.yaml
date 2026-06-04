@@ -1,0 +1,100 @@
+# PhotoBooth - Configuration exemple
+# Copiez ce fichier en config.yaml et adaptez à votre installation
+
+app:
+  fullscreen: true
+  width: 800
+  height: 480
+  fps: 30
+  language: fr
+  font_path: assets/fonts/Roboto-Regular.ttf
+
+photos:
+  raw_dir: Photo/raw
+  final_dir: Photo/final
+  default_layout: 1          # Nombre de photos sélectionné par défaut
+  available_layouts: [1, 4]  # Exactement 2 options proposées à l'utilisateur
+
+camera:
+  resolution_width: 3280     # Résolution capture (Caméra v2 max 3280x2464)
+  resolution_height: 2464
+  preview_width: 800
+  preview_height: 480
+  rotation: 0
+  flip_horizontal: false
+  flip_vertical: false
+  autofocus: false           # Caméra v2 = mise au point fixe (pas d'autofocus)
+  countdown_seconds: 3
+  flash_duration: 0.3
+
+gpio:
+  enabled: true
+  # Numérotation BOARD (physique), compatible brochage Pibooth
+  photo_button_pin: 11       # BCM17 - pin physique 11
+  photo_led_pin: 7           # BCM4  - pin physique 7
+  print_button_pin: 13       # BCM27 - pin physique 13
+  print_led_pin: 15          # BCM22 - pin physique 15
+  startup_led_pin: 29        # BCM5  - pin physique 29
+  sequence_led_pin: 31       # BCM6  - pin physique 31
+  flash_led_pin: 33          # BCM13 - pin physique 33
+  button_bounce_time: 0.3    # Temps anti-rebond en secondes
+
+templates:
+  default: strip_classic
+  templates_dir: templates
+
+processing:
+  jpeg_quality: 92
+  final_width: 1800
+  final_height: 1200
+
+ai:
+  enabled: false             # Mettre à true pour activer le remplacement de fond
+  provider: rembg            # rembg | mediapipe | removebg_api
+  background_path: assets/backgrounds/default.jpg
+  apply_on: raw_photo        # raw_photo | final_picture
+  removebg_api_key: ""       # Uniquement pour provider: removebg_api
+
+printing:
+  enabled: false             # Mettre à true pour activer l'impression
+  printer_name: ""           # Vide = imprimante CUPS par défaut
+  copies: 1
+  dpi: 300
+
+cloud:
+  enabled: false             # Mettre à true pour activer l'upload
+  provider: local            # local | google_photos | cloudflare | s3 | nextcloud
+  retry_on_failure: true
+  retry_queue_file: photos/upload_queue.json
+
+  local:
+    output_dir: photos/exported
+
+  google_photos:
+    credentials_file: credentials/google_credentials.json
+    album_name: PhotoBooth
+
+  cloudflare:
+    account_id: ""
+    api_token: ""
+    bucket_name: ""
+    public_url_base: ""
+
+  s3:
+    bucket_name: ""
+    region: eu-west-1
+    access_key: ""
+    secret_key: ""
+    public_url_base: ""
+
+qr:
+  enabled: true
+  base_url: "http://photobooth.local/photos"
+  size: 300
+  display_duration: 15       # Secondes d'affichage avant retour accueil
+
+logging:
+  level: INFO
+  file: logs/photobooth.log
+  max_size_mb: 10
+  backup_count: 3

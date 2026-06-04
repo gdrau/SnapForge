@@ -1,0 +1,40 @@
+# PhotoBooth - Dépendances Python
+# Installation : pip install -r requirements.txt
+
+# --- Core ---
+pygame>=2.5.0
+Pillow>=10.0.0
+PyYAML>=6.0
+numpy>=1.24.0
+requests>=2.31.0
+
+# --- Caméra (Raspberry Pi uniquement) ---
+# picamera2>=0.3.12  # Déjà installé sur Raspberry Pi OS Bookworm
+
+# --- GPIO (Raspberry Pi uniquement) ---
+# gpiozero est inclus dans Raspberry Pi OS
+# lgpio>=0.2.0      # Backend alternatif pour Pi 5
+
+# --- QR Code ---
+qrcode[pil]>=7.4
+
+# --- IA (optionnel) ---
+# Décommenter selon le provider configuré dans config.yaml
+
+# rembg (recommandé - local, qualité élevée)
+# rembg>=2.0.50
+# onnxruntime>=1.16.0  # Backend rembg sur CPU
+
+# mediapipe (alternatif - plus rapide, moins précis)
+# mediapipe>=0.10.0
+
+# --- Cloud (optionnel) ---
+# Google Photos
+# google-auth>=2.23.0
+# google-auth-oauthlib>=1.1.0
+
+# S3 / Nextcloud
+# boto3>=1.28.0
+
+# --- Impression ---
+# CUPS est géré via subprocess (lp), pas de dépendance Python supplémentaire

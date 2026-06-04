@@ -1,0 +1,34 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Configuration locale (contient potentiellement des secrets)
+config.yaml
+
+# Photos et logs générés
+photos/
+Photo/
+logs/
+
+# Credentials OAuth
+credentials/google_token.pkl
+credentials/*.json
+
+# Cache modèles IA
+.u2net/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
