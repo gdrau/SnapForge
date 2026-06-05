@@ -7,8 +7,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import os; os.chdir(Path(__file__).parent.parent)
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+import os; os.chdir(ROOT)
 
 from config import load_config, Config
 
@@ -20,7 +21,7 @@ config = Config(raw)
 
 from processing.ai_background import AIBackgroundProcessor
 
-print("PhotoBooth — Test IA remplacement de fond\n")
+print("SnapForge — Test IA remplacement de fond\n")
 print(f"Provider : {config.get('ai.provider')}")
 
 ai = AIBackgroundProcessor(config)
@@ -31,25 +32,30 @@ if not ai.should_apply:
     sys.exit(1)
 
 # Photo de test
-input_photo = sys.argv[1] if len(sys.argv) > 1 else "photos/test_capture.jpg"
+default_input = str(ROOT / "Photo" / "tests" / "test_capture.jpg")
+input_photo = sys.argv[1] if len(sys.argv) > 1 else default_input
+
 if not Path(input_photo).exists():
     print(f"Photo de test introuvable : {input_photo}")
-    print("Exécutez d'abord scripts/test_camera.py")
+    print("Exécutez d'abord : python scripts/test_camera.py")
     sys.exit(1)
 
-out = "photos/test_ai_result.jpg"
-Path("photos").mkdir(exist_ok=True)
+out_dir = ROOT / "Photo" / "tests"
+out_dir.mkdir(parents=True, exist_ok=True)
+out = str(out_dir / "test_ai_result.jpg")
 
-print(f"Traitement de : {input_photo}")
+print(f"Traitement de  : {Path(input_photo).resolve()}")
 t0 = time.time()
 result = ai.process(input_photo, out)
 elapsed = time.time() - t0
 
 if result == out and Path(out).exists():
-    size = Path(out).stat().st_size
-    print(f"Résultat : {out} ({size // 1024} Ko)")
-    print(f"Durée    : {elapsed:.1f}s")
+    abs_path = Path(out).resolve()
+    size_ko = abs_path.stat().st_size // 1024
+    print(f"Résultat       : {abs_path}")
+    print(f"Taille         : {size_ko} Ko")
+    print(f"Durée          : {elapsed:.1f}s")
     print("Test OK ✓")
 else:
-    print(f"AVERTISSEMENT : résultat = {result} (fallback vers photo originale)")
-    print(f"Durée : {elapsed:.1f}s")
+    print(f"AVERTISSEMENT  : fallback vers photo originale (résultat={result})")
+    print(f"Durée          : {elapsed:.1f}s")

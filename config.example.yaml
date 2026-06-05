@@ -65,10 +65,10 @@ cloud:
   enabled: false             # Mettre à true pour activer l'upload
   provider: local            # local | google_photos | cloudflare | s3 | nextcloud
   retry_on_failure: true
-  retry_queue_file: photos/upload_queue.json
+  retry_queue_file: Photo/upload_queue.json
 
   local:
-    output_dir: photos/exported
+    output_dir: Photo/exported
 
   google_photos:
     credentials_file: credentials/google_credentials.json

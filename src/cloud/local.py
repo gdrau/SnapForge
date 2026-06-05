@@ -12,7 +12,7 @@ class LocalProvider(CloudProvider):
     """Copie locale des photos finales (provider par défaut)."""
 
     def __init__(self, config):
-        self._output_dir = Path(config.get("cloud.local.output_dir", "photos/exported"))
+        self._output_dir = Path(config.get("cloud.local.output_dir", "Photo/exported"))
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._base_url = config.get("qr.base_url", "http://photobooth.local/photos")
 

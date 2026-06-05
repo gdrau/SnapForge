@@ -40,7 +40,7 @@ class UploadManager:
     def __init__(self, config):
         self._enabled = config.get("cloud.enabled", False)
         self._retry = config.get("cloud.retry_on_failure", True)
-        self._queue_file = Path(config.get("cloud.retry_queue_file", "photos/upload_queue.json"))
+        self._queue_file = Path(config.get("cloud.retry_queue_file", "Photo/upload_queue.json"))
         self._provider = _create_provider(config)
         self._queue: list[dict] = []
         self._lock = threading.Lock()

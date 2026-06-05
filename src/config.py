@@ -39,8 +39,8 @@ class Config:
 
     def _ensure_dirs(self):
         dirs = [
-            self.get("photos.raw_dir", "photos/raw"),
-            self.get("photos.final_dir", "photos/final"),
+            self.get("photos.raw_dir", "Photo/raw"),
+            self.get("photos.final_dir", "Photo/final"),
             "logs",
             "credentials",
         ]
