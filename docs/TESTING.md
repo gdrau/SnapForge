@@ -3,7 +3,7 @@
 ## Prérequis communs
 
 ```bash
-cd /home/pi/photobooth
+cd /home/pi/SnapForge
 source venv/bin/activate
 ```
 
@@ -119,7 +119,7 @@ python src/app.py --windowed
 
 ```bash
 # Installation
-sudo cp photobooth.service /etc/systemd/system/
+sudo cp snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable photobooth
 sudo systemctl start photobooth

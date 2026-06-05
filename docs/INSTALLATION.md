@@ -40,8 +40,8 @@ sudo apt install -y \
 
 ```bash
 cd /home/pi
-git clone https://github.com/votre-repo/photobooth.git
-cd photobooth
+git clone https://github.com/gdrau/SnapForge.git
+cd SnapForge
 
 python3 -m venv venv --system-site-packages
 source venv/bin/activate
@@ -91,10 +91,10 @@ python src/app.py --windowed
 
 ```bash
 # Vérifier le chemin dans le service
-nano photobooth.service
-# Adapter WorkingDirectory et ExecStart si installé ailleurs que /home/pi/photobooth
+nano snapforge.service
+# Adapter WorkingDirectory et ExecStart si installé ailleurs que /home/pi/SnapForge
 
-sudo cp photobooth.service /etc/systemd/system/
+sudo cp snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable photobooth
 sudo systemctl start photobooth
@@ -113,7 +113,7 @@ Si vous utilisez le mode console (Lite) :
 dtoverlay=vc4-kms-v3d
 
 # Créer un service X minimal ou utiliser directframebuffer SDL
-# Modifier dans photobooth.service :
+# Modifier dans snapforge.service :
 Environment=SDL_VIDEODRIVER=fbcon
 Environment=SDL_FBDEV=/dev/fb0
 ```
@@ -132,7 +132,7 @@ server {
     listen 80;
     server_name _;
     location /photos {
-        alias /home/pi/photobooth/photos/final;
+        alias /home/pi/SnapForge/photos/final;
         autoindex on;
     }
 }
@@ -182,7 +182,7 @@ printing:
 ## Mise à jour
 
 ```bash
-cd /home/pi/photobooth
+cd /home/pi/SnapForge
 git pull
 source venv/bin/activate
 pip install -r requirements.txt

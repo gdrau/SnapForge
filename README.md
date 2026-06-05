@@ -1,4 +1,4 @@
-# PhotoBooth — Raspberry Pi
+# SnapForge — PhotoBooth Raspberry Pi
 
 Application photobooth moderne pour Raspberry Pi 4/5, compatible Raspberry Pi OS Bookworm.
 
@@ -36,9 +36,8 @@ Application photobooth moderne pour Raspberry Pi 4/5, compatible Raspberry Pi OS
 ## Démarrage rapide
 
 ```bash
-# Remplacez VOTRE_USER/photobooth par votre URL GitHub réelle
-git clone https://github.com/VOTRE_USER/photobooth.git
-cd photobooth
+git clone https://github.com/gdrau/SnapForge.git
+cd SnapForge
 
 # Créer la configuration locale
 cp config.example.yaml config.yaml
