@@ -7,6 +7,8 @@ from typing import Callable, List, Optional
 import numpy as np
 import pygame
 
+from ui.carousel import CarouselManager
+
 logger = logging.getLogger(__name__)
 
 # Palette
@@ -128,6 +130,8 @@ class PygameUI:
 
         self._fonts: dict = {}
         self._init_pygame()
+        # Carrousel photos sur l'écran d'accueil (init après pygame pour surfaces)
+        self._carousel = CarouselManager(config)
 
     @property
     def _is_portrait(self) -> bool:
@@ -185,15 +189,17 @@ class PygameUI:
         with self._preview_lock:
             self._preview_frame = None
         # Police et position du bouton adaptées à la largeur de l'écran
-        txt  = "APPUYEZ POUR COMMENCER"
+        txt      = "APPUYEZ POUR COMMENCER"
         font_key = "md" if self._is_portrait else "lg"
-        px   = 20   if self._is_portrait else 50
-        cy   = self._h - 60 if self._is_portrait else self._h - 80
+        px       = 20   if self._is_portrait else 50
+        cy       = self._h - 60 if self._is_portrait else self._h - 80
         self._buttons = [
             self._btn_auto(txt, _ACCENT, self._w // 2, cy,
                            font=font_key, px=px, py=22,
                            action="open_choose_format")
         ]
+        # Recharger les photos du carrousel après chaque retour à l'accueil
+        self._carousel.refresh()
 
     def show_choose_format(self, layouts: List[int], selected: int):
         self._screen_name = "choose_format"
@@ -370,10 +376,18 @@ class PygameUI:
 
         if page == "plugins":
             return [
-                {"type": "toggle", "label": "QR Code sur résultat", "key": "qr_on_result", "fmt": fmt_on},
-                {"type": "toggle", "label": "IA remplacement fond", "key": "ai_enabled",   "fmt": lambda v: "ACTIVEE" if v else "DESACTIVEE"},
-                {"type": "toggle", "label": "Impression",           "key": "print_enabled","fmt": lambda v: "ACTIVEE" if v else "DESACTIVEE"},
-                {"type": "toggle", "label": "Upload cloud",         "key": "cloud_enabled","fmt": lambda v: "ACTIVE" if v else "DESACTIVE"},
+                {"type": "toggle", "label": "QR Code sur résultat",   "key": "qr_on_result",      "fmt": fmt_on},
+                {"type": "toggle", "label": "IA remplacement fond",   "key": "ai_enabled",         "fmt": lambda v: "ACTIVEE" if v else "DESACTIVEE"},
+                {"type": "toggle", "label": "Impression",             "key": "print_enabled",      "fmt": lambda v: "ACTIVEE" if v else "DESACTIVEE"},
+                {"type": "toggle", "label": "Upload cloud",           "key": "cloud_enabled",      "fmt": lambda v: "ACTIVE" if v else "DESACTIVE"},
+                {"type": "sep"},
+                {"type": "toggle", "label": "Carrousel d'accueil",   "key": "carousel_enabled",   "fmt": fmt_on},
+                {"type": "cycle",  "label": "Mode carrousel",         "key": "carousel_mode",
+                 "values": ["table", "simple"],
+                 "fmt": lambda v: "TABLE" if v == "table" else "SIMPLE"},
+                {"type": "cycle",  "label": "Intervalle (sec)",       "key": "carousel_interval",
+                 "values": [2, 3, 4, 6, 10],
+                 "fmt": lambda v: f"{v} sec"},
                 {"type": "sep"},
                 {"type": "back"},
             ]
@@ -819,15 +833,59 @@ class PygameUI:
 
     def _r_idle(self):
         self._screen.fill(_DARK)
-        name = self._info.get("booth_name", "SnapForge")
-        font = self._best_font_for(name, self._w - 60)
-        surf = font.render(name, True, _WHITE)
-        self._screen.blit(surf, surf.get_rect(center=(self._w // 2, self._h // 3)))
-        self._txt("Bienvenue !", "md", _GRAY, self._w // 2, self._h // 2, cx=True)
-        t = int(time.time() * 2) % 3
-        for i in range(3):
-            pygame.draw.circle(self._screen, _ACCENT if i == t else _GRAY,
-                               (self._w // 2 - 20 + i * 20, self._h * 3 // 4 - 60), 7)
+        name        = self._info.get("booth_name", "SnapForge")
+        has_carousel = self._carousel.enabled and self._carousel.has_photos()
+
+        # --- Positions titre / sous-titre selon orientation et carrousel ---
+        if has_carousel and self._is_portrait:
+            title_y    = int(self._h * 0.30)
+            subtitle_y = int(self._h * 0.40)
+        elif has_carousel:
+            title_y    = int(self._h * 0.18)
+            subtitle_y = int(self._h * 0.30)
+        else:
+            title_y    = self._h // 3
+            subtitle_y = self._h // 2
+
+        # Titre événement (police auto-ajustée)
+        font = self._best_font_for(name, self._w - 40)
+        ts   = font.render(name, True, _WHITE)
+        self._screen.blit(ts, ts.get_rect(center=(self._w // 2, title_y)))
+
+        # Sous-titre
+        self._txt("Bienvenue !", "md", _GRAY, self._w // 2, subtitle_y, cx=True)
+
+        # --- Zone carrousel ---
+        btn_cy  = self._h - 60 if self._is_portrait else self._h - 80
+        btn_h   = self._fonts["md"].get_height() + 44   # hauteur approx. du bouton
+        zone_x  = 20
+        zone_w  = self._w - 40
+        zone_y  = subtitle_y + 30
+        zone_h  = btn_cy - btn_h // 2 - 20 - zone_y
+        zone_h  = max(60, zone_h)
+
+        if has_carousel and zone_h >= 60:
+            # Avancer le carrousel si nécessaire
+            self._carousel.update()
+            # Rendu des photos
+            items = self._carousel.get_render_items(zone_x, zone_y, zone_w, zone_h)
+            for surf, x, y in items:
+                # Ombre portée
+                sw, sh = surf.get_size()
+                shadow = pygame.Surface((sw, sh))
+                shadow.fill(_BLACK)
+                shadow.set_alpha(85)
+                self._screen.blit(shadow, (x + 4, y + 4))
+                # Photo
+                self._screen.blit(surf, (x, y))
+        else:
+            # Animation points (aucune photo pour le moment)
+            t    = int(time.time() * 2) % 3
+            dy   = zone_y + zone_h // 2
+            for i in range(3):
+                c = _ACCENT if i == t else _GRAY
+                pygame.draw.circle(self._screen, c,
+                                   (self._w // 2 - 20 + i * 20, dy), 7)
 
     def _r_choose(self):
         self._screen.fill(_DARK)

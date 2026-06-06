@@ -304,8 +304,12 @@ class StateMachine:
             "event_title":     self._config.get("event.title", ""),
             "event_description": self._config.get("event.description", ""),
             # Config générale
-            "booth_name":      self._config.get("app.booth_name", "SnapForge"),
-            "countdown":       self._countdown_s,
+            "booth_name":        self._config.get("app.booth_name", "SnapForge"),
+            "countdown":         self._countdown_s,
+            # Carrousel
+            "carousel_enabled":  self._config.get("home_carousel.enabled", True),
+            "carousel_mode":     self._config.get("home_carousel.mode", "table"),
+            "carousel_interval": int(self._config.get("home_carousel.interval_seconds", 4)),
             # Metadata UI
             "_available_templates": tpl_names,
             "_gpio_log":       list(self._gpio_log),
@@ -343,8 +347,11 @@ class StateMachine:
             "templates.photo_4":      settings.get("tpl_4", "landscape_4photos"),
             "event.title":            settings.get("event_title", ""),
             "event.description":      settings.get("event_description", ""),
-            "app.booth_name":         settings.get("booth_name", "SnapForge"),
-            "session.countdown_seconds": self._countdown_s,
+            "app.booth_name":              settings.get("booth_name", "SnapForge"),
+            "session.countdown_seconds":   self._countdown_s,
+            "home_carousel.enabled":       bool(settings.get("carousel_enabled", True)),
+            "home_carousel.mode":          settings.get("carousel_mode", "table"),
+            "home_carousel.interval_seconds": int(settings.get("carousel_interval", 4)),
         }
         for key, val in updates.items():
             self._config.set(key, val)
