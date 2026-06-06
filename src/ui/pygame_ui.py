@@ -867,17 +867,13 @@ class PygameUI:
         if has_carousel and zone_h >= 60:
             # Avancer le carrousel si nécessaire
             self._carousel.update()
-            # Rendu des photos
+            # Rendu : photo+cadre et ombre sont déjà tournés ensemble
+            # Ordre de rendu : ombres en premier, photos au-dessus
             items = self._carousel.get_render_items(zone_x, zone_y, zone_w, zone_h)
-            for surf, x, y in items:
-                # Ombre portée
-                sw, sh = surf.get_size()
-                shadow = pygame.Surface((sw, sh))
-                shadow.fill(_BLACK)
-                shadow.set_alpha(85)
-                self._screen.blit(shadow, (x + 4, y + 4))
-                # Photo
-                self._screen.blit(surf, (x, y))
+            for photo_surf, shadow_surf, x, y in items:
+                self._screen.blit(shadow_surf, (x + 5, y + 5))
+            for photo_surf, shadow_surf, x, y in items:
+                self._screen.blit(photo_surf, (x, y))
         else:
             # Animation points (aucune photo pour le moment)
             t    = int(time.time() * 2) % 3

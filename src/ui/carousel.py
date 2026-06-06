@@ -1,12 +1,18 @@
 """
 Carrousel de photos sur l'écran d'accueil.
 Chargement en arrière-plan (non bloquant), deux modes d'affichage.
+
+Workflow photo :
+  1. Charger miniature brute (sans bordure)
+  2. Réduire à la taille d'affichage
+  3. Ajouter la bordure blanche APRÈS redimensionnement (toujours visible)
+  4. Tourner le tout (photo + bordure + ombre) d'un seul bloc
 """
 import logging
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -22,52 +28,50 @@ try:
 except ImportError:
     _PIL_OK = False
 
-BORDER = 5          # bordure blanche "effet photo imprimée"
-SHADOW  = 4         # décalage de l'ombre portée
-
-# Disposition "table" selon le nombre de photos visibles
-# (cx_ratio, cy_ratio, angle_deg, scale_factor)
-# cx/cy = position du centre de la photo dans la zone (0-1)
+# Disposition "table" : (cx_ratio, cy_ratio, angle_deg, scale_factor)
+# Angles bornés à ±10° pour un effet naturel non caricatural
 _TABLE = {
     1: [(0.50, 0.50,  0.0, 1.00)],
     2: [(0.28, 0.50, -8.0, 0.96), (0.72, 0.50,  7.0, 0.96)],
-    3: [(0.20, 0.52,-10.0, 0.90), (0.50, 0.48,  0.0, 1.00), (0.80, 0.52,  9.0, 0.90)],
-    4: [(0.18, 0.52,-11.0, 0.88), (0.40, 0.48, -4.0, 0.95),
-        (0.62, 0.52,  5.0, 0.95), (0.84, 0.48,  9.0, 0.88)],
-    5: [(0.13, 0.52,-13.0, 0.85), (0.31, 0.48, -6.0, 0.92),
+    3: [(0.20, 0.52, -9.0, 0.90), (0.50, 0.48,  0.0, 1.00), (0.80, 0.52,  8.0, 0.90)],
+    4: [(0.18, 0.52,-10.0, 0.88), (0.40, 0.48, -4.0, 0.95),
+        (0.62, 0.52,  4.0, 0.95), (0.84, 0.48,  9.0, 0.88)],
+    5: [(0.13, 0.52,-10.0, 0.85), (0.31, 0.48, -5.0, 0.92),
         (0.52, 0.52,  0.0, 1.00), (0.71, 0.48,  5.0, 0.92),
-        (0.89, 0.52, 11.0, 0.85)],
+        (0.89, 0.52, 10.0, 0.85)],
 }
+
+_THUMB_MAX = 300     # taille max de la miniature brute en cache
 
 
 class CarouselManager:
     """
-    Gère le carrousel de photos de l'écran d'accueil.
-
-    Thread-safe : chargement en background, rendu depuis le thread principal.
-    Les miniatures sont préchargées avec bordure blanche (effet tirage photo).
+    Gère le carrousel de photos sur l'écran d'accueil.
+    Toutes les opérations lourdes (IO, PIL) se font en background thread.
+    Le rendu se fait depuis le thread principal Pygame.
     """
 
-    _THUMB_MAX = 280  # taille max d'une miniature en cache (px)
-
     def __init__(self, config):
-        self._config = config
-        self._source_dir = Path(config.get("photos.final_dir", "Photo/final"))
+        self._config  = config
+        self._source  = Path(config.get("photos.final_dir", "Photo/final"))
 
+        # Miniatures brutes (sans bordure) – PIL.Image convertis en pygame.Surface
         self._thumbs: List["pygame.Surface"] = []
-        self._lock = threading.Lock()
-        self._offset = 0                  # index de départ dans la liste
-        self._last_advance = time.monotonic()
-        self._cache_items: list = []      # items pré-calculés pour le rendu
-        self._cache_key = None            # clé de cache (offset, mode, n, zw, zh)
-        self._loading = False
+        self._lock    = threading.Lock()
+        self._offset  = 0
+        self._t_last  = time.monotonic()
+
+        # Cache de layout pour éviter de recalculer à chaque frame
+        self._cache_items: list = []
+        self._cache_key = None
+        self._loading   = False
 
         if self.enabled:
             self._start_load()
 
-    # ------------------------------------------------------------------
-    # Propriétés lues directement depuis config (toujours à jour)
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Propriétés lues directement depuis config (toujours à jour)          #
+    # ------------------------------------------------------------------ #
 
     @property
     def enabled(self) -> bool:
@@ -85,26 +89,25 @@ class CarouselManager:
     def max_n(self) -> int:
         return int(self._config.get("home_carousel.max_photos_displayed", 5))
 
-    # ------------------------------------------------------------------
-    # API publique
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # API publique                                                          #
+    # ------------------------------------------------------------------ #
 
     def has_photos(self) -> bool:
         with self._lock:
             return len(self._thumbs) > 0
 
     def refresh(self):
-        """Appelé après chaque session ou activation du carrousel."""
+        """Déclencher après chaque session ou changement de config."""
         if self.enabled:
             self._start_load()
 
     def update(self):
-        """Avance le carrousel si l'intervalle est écoulé (appeler chaque frame)."""
+        """Avancer le carrousel si l'intervalle est écoulé (appeler chaque frame)."""
         if not self.enabled:
             return
-        now = time.monotonic()
-        if now - self._last_advance >= self.interval:
-            self._last_advance = now
+        if time.monotonic() - self._t_last >= self.interval:
+            self._t_last = time.monotonic()
             with self._lock:
                 if len(self._thumbs) > 1:
                     self._offset = (self._offset + 1) % len(self._thumbs)
@@ -113,8 +116,8 @@ class CarouselManager:
 
     def get_render_items(self, zx: int, zy: int, zw: int, zh: int) -> list:
         """
-        Retourne [(surface, abs_x, abs_y)] prêts à blitter.
-        Utilise un cache : recalcul uniquement si offset/taille change.
+        Retourne [(photo_surf, shadow_surf, abs_x, abs_y), …]
+        photo_surf et shadow_surf sont déjà tournés et prêts à blitter.
         """
         with self._lock:
             if not self._thumbs:
@@ -124,7 +127,7 @@ class CarouselManager:
             key = (self._offset, self.mode, n, zw, zh)
 
             if self._cache_key == key and self._cache_items:
-                return [(s, x + zx, y + zy) for s, x, y in self._cache_items]
+                return [(p, s, x + zx, y + zy) for p, s, x, y in self._cache_items]
 
             photos = [self._thumbs[(self._offset + i) % len(self._thumbs)]
                       for i in range(n)]
@@ -136,11 +139,11 @@ class CarouselManager:
 
             self._cache_items = items
             self._cache_key   = key
-            return [(s, x + zx, y + zy) for s, x, y in items]
+            return [(p, s, x + zx, y + zy) for p, s, x, y in items]
 
-    # ------------------------------------------------------------------
-    # Chargement en arrière-plan
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Chargement en arrière-plan                                            #
+    # ------------------------------------------------------------------ #
 
     def _start_load(self):
         if self._loading:
@@ -152,13 +155,13 @@ class CarouselManager:
         if not (_PIL_OK and _PYGAME_OK):
             self._loading = False
             return
-        if not self._source_dir.exists():
+        if not self._source.exists():
             self._loading = False
             return
 
         try:
             files = sorted(
-                [p for p in self._source_dir.glob("*.jpg") if p.is_file()],
+                [p for p in self._source.glob("*.jpg") if p.is_file()],
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
@@ -168,18 +171,12 @@ class CarouselManager:
             return
 
         new_thumbs = []
-        for path in files[:15]:    # max 15 photos en mémoire
+        for path in files[:15]:
             try:
                 img = PILImage.open(path).convert("RGB")
-                img.thumbnail((self._THUMB_MAX, self._THUMB_MAX), PILImage.LANCZOS)
-                # Bordure blanche — effet tirage photo
-                bordered = PILImage.new(
-                    "RGB",
-                    (img.width + BORDER * 2, img.height + BORDER * 2),
-                    (252, 252, 252),
-                )
-                bordered.paste(img, (BORDER, BORDER))
-                surf = pygame.image.fromstring(bordered.tobytes(), bordered.size, "RGB")
+                # Miniature brute SANS bordure (ajoutée à l'affichage pour rester visible)
+                img.thumbnail((_THUMB_MAX, _THUMB_MAX), PILImage.LANCZOS)
+                surf = pygame.image.fromstring(img.tobytes(), img.size, "RGB")
                 new_thumbs.append(surf)
             except Exception as e:
                 logger.debug(f"Carousel: ignore {path.name}: {e}")
@@ -189,38 +186,66 @@ class CarouselManager:
             self._cache_items = []
             self._cache_key   = None
 
-        logger.info(f"Carousel: {len(new_thumbs)} miniatures chargees depuis {self._source_dir}")
+        logger.info(f"Carousel: {len(new_thumbs)} miniatures chargees")
         self._loading = False
 
-    # ------------------------------------------------------------------
-    # Layouts
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Layouts                                                               #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _make_photo_with_border(scaled: "pygame.Surface") -> "pygame.Surface":
+        """
+        Crée une surface SRCALPHA : photo + cadre blanc.
+        Le cadre est calculé APRÈS le redimensionnement pour toujours être visible.
+        """
+        pw, ph = scaled.get_size()
+        bw = max(7, int(min(pw, ph) * 0.07))   # 7% de la petite dimension, min 7px
+        fw, fh = pw + bw * 2, ph + bw * 2
+
+        surf = pygame.Surface((fw, fh), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))
+        # Cadre blanc opaque
+        pygame.draw.rect(surf, (252, 252, 252, 255), (0, 0, fw, fh))
+        # Photo au centre
+        surf.blit(scaled, (bw, bw))
+        return surf
+
+    @staticmethod
+    def _make_shadow(fw: int, fh: int, alpha: int = 90) -> "pygame.Surface":
+        """Ombre portée de la même taille que la photo (SRCALPHA)."""
+        s = pygame.Surface((fw, fh), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 0))
+        pygame.draw.rect(s, (0, 0, 0, alpha), (0, 0, fw, fh))
+        return s
 
     def _layout_simple(self, photos: list, zw: int, zh: int) -> list:
-        """Une photo centrée dans la zone."""
+        """Une photo centrée, avec bordure et ombre."""
         if not photos:
             return []
         surf = photos[0]
         iw, ih = surf.get_size()
-        scale = min((zw - 10) / iw, (zh - 10) / ih, 1.0)
+        scale = min((zw - 20) / iw, (zh - 20) / ih, 1.0)
         if scale < 0.99:
-            nw, nh = int(iw * scale), int(ih * scale)
-            surf = pygame.transform.smoothscale(surf, (nw, nh))
-        else:
-            nw, nh = iw, ih
-        return [(surf, (zw - nw) // 2, (zh - nh) // 2)]
+            surf = pygame.transform.smoothscale(surf, (int(iw * scale), int(ih * scale)))
+        iw, ih = surf.get_size()
+
+        photo  = self._make_photo_with_border(surf)
+        shadow = self._make_shadow(*photo.get_size())
+        fw, fh = photo.get_size()
+        return [(photo, shadow, (zw - fw) // 2, (zh - fh) // 2)]
 
     def _layout_table(self, photos: list, zw: int, zh: int) -> list:
-        """Photos dispersées comme sur une table, avec légères rotations."""
+        """
+        Photos étalées comme sur une table.
+        Workflow : scale → cadre blanc → rotation de l'ensemble (photo+cadre+ombre).
+        """
         n = len(photos)
         if n == 0:
             return []
 
         # Taille de base adaptée à la zone
-        if zw > zh:          # zone paysage
-            base = int(zh * 0.68)
-        else:                # zone portrait
-            base = int(min(zw, zh) * 0.44)
+        base = int(zh * 0.68) if zw > zh else int(min(zw, zh) * 0.44)
 
         layout = _TABLE.get(n, _TABLE[min(n, 5)])
         items  = []
@@ -230,7 +255,7 @@ class CarouselManager:
             tw = int(base * sf)
             th = int(tw * ih / iw)
 
-            # Clamp pour ne pas dépasser les bords
+            # Clamp pour ne pas dépasser la zone
             if tw > zw * 0.72:
                 tw = int(zw * 0.72); th = int(tw * ih / iw)
             if th > zh * 0.92:
@@ -238,16 +263,27 @@ class CarouselManager:
             if tw < 20 or th < 20:
                 continue
 
-            scaled  = pygame.transform.smoothscale(surf, (tw, th))
-            rotated = pygame.transform.rotate(scaled, angle)
-            rw, rh  = rotated.get_size()
+            # 1. Redimensionner la photo brute
+            scaled = pygame.transform.smoothscale(surf, (tw, th))
 
-            # Centre cible dans la zone
+            # 2. Ajouter le cadre blanc APRÈS redimensionnement
+            photo_full = self._make_photo_with_border(scaled)
+            fw, fh     = photo_full.get_size()
+
+            # 3. Ombre (même taille que la photo avec cadre)
+            shadow_full = self._make_shadow(fw, fh, alpha=85)
+
+            # 4. Rotation de l'intégralité (photo+cadre et ombre tournent ensemble)
+            rot_photo  = pygame.transform.rotate(photo_full,  angle)
+            rot_shadow = pygame.transform.rotate(shadow_full, angle)
+            rw, rh     = rot_photo.get_size()
+
+            # 5. Positionnement dans la zone
             cx = int(cx_r * zw)
             cy = int(cy_r * zh)
             x  = max(0, min(cx - rw // 2, zw - rw))
             y  = max(0, min(cy - rh // 2, zh - rh))
 
-            items.append((rotated, x, y))
+            items.append((rot_photo, rot_shadow, x, y))
 
         return items
