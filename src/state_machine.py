@@ -346,31 +346,51 @@ class StateMachine:
     # ------------------------------------------------------------------
 
     def _on_photo_button(self):
-        logger.debug(f"[BTN] Photo -- etat {self._state.name}")
+        """
+        Bouton 1 (photo) = action principale ou option GAUCHE.
+
+        Règle écran par écran :
+          IDLE          -> 1 bouton visible -> démarre le choix de format
+          CHOOSE_FORMAT -> 2 options       -> sélectionne la 1re option (gauche)
+          PREVIEW       -> 1 bouton        -> lance le compte à rebours
+          REVIEW        -> 1 ou 2 boutons  -> imprime (si printer) OU continue
+          QR_DISPLAY    -> 1 bouton        -> retour accueil
+          ERROR         -> retour accueil immédiat
+        """
+        logger.debug(f"[BTN1] etat={self._state.name}")
         if self._state == State.IDLE:
             self._go(State.CHOOSE_FORMAT)
         elif self._state == State.CHOOSE_FORMAT:
-            self._start_session(self._default_layout)
+            # Option gauche = 1re option de la liste
+            self._start_session(self._available_layouts[0])
         elif self._state == State.PREVIEW:
             self._go(State.COUNTDOWN)
         elif self._state == State.REVIEW:
-            self._go(State.UPLOADING)
-        elif self._state == State.QR_DISPLAY:
+            if self._printer.enabled:
+                self._go(State.PRINT_WAIT)   # bouton gauche = IMPRIMER
+            else:
+                self._go(State.UPLOADING)    # seul bouton = CONTINUER
+        elif self._state in (State.QR_DISPLAY, State.ERROR):
             self._cancel_timer()
             self._go(State.IDLE)
-        elif self._state == State.ADMIN:
-            pass  # Géré par l'UI
 
     def _on_print_button(self):
-        logger.debug(f"[BTN] Print -- etat {self._state.name}")
+        """
+        Bouton 2 (print) = action secondaire ou option DROITE.
+
+        Règle écran par écran :
+          CHOOSE_FORMAT -> 2 options      -> sélectionne la 2e option (droite)
+          REVIEW        -> 2 boutons      -> continue sans imprimer (droite)
+          QR_DISPLAY    -> retour accueil (même que bouton 1)
+          Autres        -> ignoré si 1 seul bouton visible
+        """
+        logger.debug(f"[BTN2] etat={self._state.name}")
         if self._state == State.CHOOSE_FORMAT:
-            layouts = self._available_layouts
-            idx = layouts.index(self._default_layout) if self._default_layout in layouts else 0
-            self._default_layout = layouts[(idx + 1) % len(layouts)]
-            self._ui.update_format_selection(self._default_layout)
+            # Option droite = dernière option de la liste
+            self._start_session(self._available_layouts[-1])
         elif self._state == State.REVIEW and self._printer.enabled:
-            self._go(State.PRINT_WAIT)
-        elif self._state in (State.QR_DISPLAY, State.IDLE):
+            self._go(State.UPLOADING)    # bouton droit = CONTINUER sans imprimer
+        elif self._state == State.QR_DISPLAY:
             self._cancel_timer()
             self._go(State.IDLE)
 
