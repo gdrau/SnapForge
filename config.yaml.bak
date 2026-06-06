@@ -1,0 +1,84 @@
+app:
+  booth_name: Anniversaire Gabin
+  fullscreen: false
+  width: 800
+  height: 480
+  fps: 30
+  font_path: assets/fonts/Roboto-Regular.ttf
+event:
+  title: Mon Événement
+  description: Votre description ici
+photos:
+  option_a: 1
+  option_b: 4
+  raw_dir: Photo/raw
+  final_dir: Photo/final
+session:
+  countdown_seconds: 3
+camera:
+  resolution_width: 3280
+  resolution_height: 2464
+  preview_width: 800
+  preview_height: 480
+  rotation: 0
+  flip_horizontal: false
+  flip_vertical: false
+gpio:
+  enabled: true
+  photo_button_pin: 11
+  photo_led_pin: 7
+  print_button_pin: 13
+  print_led_pin: 15
+  startup_led_pin: 29
+  sequence_led_pin: 31
+  flash_led_pin: 33
+  button_bounce_time: 0.05
+templates:
+  photo_1: portrait_1photo
+  photo_2: portrait_1photo
+  photo_3: portrait_1photo
+  photo_4: landscape_4photos
+  default: portrait_1photo
+  templates_dir: templates
+processing:
+  jpeg_quality: 92
+  final_width: 1800
+  final_height: 1200
+ai:
+  enabled: false
+  provider: rembg
+  background_path: assets/backgrounds/default_bg.jpg
+  apply_on: raw_photo
+  removebg_api_key: ''
+plugins:
+  qr_on_result: true
+printing:
+  enabled: false
+  printer_name: ''
+  copies: 1
+  dpi: 300
+cloud:
+  enabled: false
+  provider: local
+  retry_on_failure: true
+  retry_queue_file: Photo/upload_queue.json
+  local:
+    output_dir: Photo/exported
+  google_photos:
+    credentials_file: credentials/google_credentials.json
+    album_name: SnapForge
+  cloudflare:
+    account_id: ''
+    api_token: ''
+    bucket_name: ''
+    public_url_base: ''
+qr:
+  enabled: true
+  base_url: http://snapforge.local/photos
+  size: 300
+  display_duration: 15
+logging:
+  level: INFO
+  file: logs/snapforge.log
+  max_size_mb: 10
+  backup_count: 3

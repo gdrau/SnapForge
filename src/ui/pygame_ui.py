@@ -115,6 +115,8 @@ class PygameUI:
         self._admin_stack: List[str] = []
         self._admin_scroll = 0
         self._admin_scroll_cache: dict = {}
+        self._admin_selection: int = 0          # index item sélectionné (clavier)
+        self._admin_selection_cache: dict = {}  # sélection par page
         self._text_editing: Optional[str] = None
 
         self._fonts: dict = {}
@@ -259,8 +261,8 @@ class PygameUI:
         self._screen_name = "qr"
         self._info = {"photo": photo_path, "qr": qr_image, "url": upload_url}
         self._buttons = [
-            self._btn_auto("RETOUR ACCUEIL", _BLUE, self._w // 2, self._h - 55,
-                           font="sm", px=40, py=18, action="return_idle")
+            self._btn_auto("RETOUR ACCUEIL", _BLUE, self._w // 2, self._h - 26,
+                           font="xs", px=28, py=10, action="return_idle")
         ]
 
     def show_error(self, message: str):
@@ -278,6 +280,8 @@ class PygameUI:
         self._admin_stack = []
         self._admin_scroll = 0
         self._admin_scroll_cache = {}
+        self._admin_selection = 0
+        self._admin_selection_cache = {}
         self._text_editing = None
         self._info = {"settings": dict(settings)}
         self._build_admin(settings)
@@ -502,22 +506,17 @@ class PygameUI:
             settings = self._info.get("settings", {})
 
             if action == "admin_nav":
+                self._admin_selection_cache[self._admin_page] = self._admin_selection
                 self._admin_scroll_cache[self._admin_page] = self._admin_scroll
                 self._admin_stack.append(self._admin_page)
                 self._admin_page = data
                 self._admin_scroll = self._admin_scroll_cache.get(data, 0)
+                self._admin_selection = self._admin_selection_cache.get(data, 0)
                 self._text_editing = None
                 self._build_admin(settings)
 
             elif action == "admin_back_btn":
-                if self._admin_stack:
-                    prev = self._admin_stack.pop()
-                    self._admin_scroll_cache[self._admin_page] = self._admin_scroll
-                    self._admin_page = prev
-                    self._admin_scroll = self._admin_scroll_cache.get(prev, 0)
-                    self._build_admin(settings)
-                else:
-                    self._emit("admin_cancel")
+                self._admin_go_back(settings)
 
             elif action == "admin_cycle":
                 key, val = data["key"], data["value"]
@@ -540,43 +539,132 @@ class PygameUI:
             break
 
     def _handle_admin_key(self, event) -> bool:
-        """Gère les touches clavier dans l'admin. Retourne True si consommé."""
+        """Navigation clavier complète dans le menu admin."""
+        settings = self._info.get("settings", {})
+        items = self._info.get("items", [])
+
+        # --- Mode saisie texte ---
         if self._text_editing:
-            settings = self._info.get("settings", {})
             cur = str(settings.get(self._text_editing, ""))
-            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
                 self._text_editing = None
                 self._build_admin(settings)
-                return True
-            if event.key == pygame.K_ESCAPE:
-                self._text_editing = None
-                self._build_admin(settings)
-                return True
-            if event.key == pygame.K_BACKSPACE:
+            elif event.key == pygame.K_BACKSPACE:
                 settings[self._text_editing] = cur[:-1]
                 self._info["settings"] = settings
                 self._build_admin(settings)
-                return True
-            if event.unicode and event.unicode.isprintable() and len(cur) < 60:
+            elif event.unicode and event.unicode.isprintable() and len(cur) < 60:
                 settings[self._text_editing] = cur + event.unicode
                 self._info["settings"] = settings
                 self._build_admin(settings)
-                return True
-            return True  # Consomme tous les events clavier en mode saisie
-
-        if event.key == pygame.K_ESCAPE:
-            if self._admin_stack:
-                # Retour page précédente
-                prev = self._admin_stack.pop()
-                self._admin_scroll_cache[self._admin_page] = self._admin_scroll
-                self._admin_page = prev
-                self._admin_scroll = self._admin_scroll_cache.get(prev, 0)
-                self._build_admin(self._info.get("settings", {}))
-            else:
-                # Sur main → fermer admin
-                self._emit("admin_cancel")
             return True
-        return False
+
+        # --- Navigation ---
+        focusable = [i for i, it in enumerate(items)
+                     if it.get("type") not in ("sep", "gpio_info")]
+        if not focusable:
+            if event.key == pygame.K_ESCAPE:
+                self._admin_go_back(settings)
+            return True
+
+        # Index courant dans la liste focusable
+        sel = self._admin_selection
+        if sel not in focusable:
+            sel = focusable[0]
+        pos = focusable.index(sel)
+
+        if event.key == pygame.K_DOWN:
+            self._admin_selection = focusable[(pos + 1) % len(focusable)]
+            self._scroll_to_selection(items)
+            return True
+
+        if event.key == pygame.K_UP:
+            self._admin_selection = focusable[(pos - 1) % len(focusable)]
+            self._scroll_to_selection(items)
+            return True
+
+        if event.key == pygame.K_ESCAPE or event.key == pygame.K_LEFT:
+            item = items[sel]
+            if item.get("type") in ("cycle", "toggle") and event.key == pygame.K_LEFT:
+                # Valeur précédente
+                self._admin_cycle_item(item, settings, direction=-1)
+            else:
+                self._admin_go_back(settings)
+            return True
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_RIGHT):
+            item = items[sel]
+            itype = item.get("type")
+
+            if itype == "nav" or (itype == "nav" and event.key == pygame.K_RIGHT):
+                self._admin_selection_cache[self._admin_page] = self._admin_selection
+                self._admin_scroll_cache[self._admin_page] = self._admin_scroll
+                self._admin_stack.append(self._admin_page)
+                self._admin_page = item["target"]
+                self._admin_scroll = self._admin_scroll_cache.get(item["target"], 0)
+                self._admin_selection = self._admin_selection_cache.get(item["target"], 0)
+                self._text_editing = None
+                self._build_admin(settings)
+
+            elif itype in ("cycle", "toggle"):
+                direction = -1 if event.key == pygame.K_LEFT else 1
+                self._admin_cycle_item(item, settings, direction)
+
+            elif itype == "text":
+                self._text_editing = item["key"]
+                self._build_admin(settings)
+
+            elif itype == "action":
+                act = item.get("action")
+                if act == "admin_save":
+                    self._emit("admin_save", dict(settings))
+                elif act == "admin_cancel":
+                    self._emit("admin_cancel")
+
+            elif itype == "back":
+                self._admin_go_back(settings)
+
+            return True
+
+        return True
+
+    def _admin_cycle_item(self, item: dict, settings: dict, direction: int = 1):
+        """Avance (+1) ou recule (-1) la valeur d'un item cycle/toggle."""
+        key = item["key"]
+        values = item.get("values", [False, True])
+        current = settings.get(key, values[0])
+        idx = values.index(current) if current in values else 0
+        settings[key] = values[(idx + direction) % len(values)]
+        self._info["settings"] = settings
+        self._build_admin(settings)
+
+    def _admin_go_back(self, settings: dict):
+        """Retour à la page admin précédente ou fermeture du menu."""
+        if self._admin_stack:
+            self._admin_selection_cache[self._admin_page] = self._admin_selection
+            self._admin_scroll_cache[self._admin_page] = self._admin_scroll
+            prev = self._admin_stack.pop()
+            self._admin_page = prev
+            self._admin_scroll = self._admin_scroll_cache.get(prev, 0)
+            self._admin_selection = self._admin_selection_cache.get(prev, 0)
+            self._text_editing = None
+            self._build_admin(settings)
+        else:
+            self._emit("admin_cancel")
+
+    def _scroll_to_selection(self, items: list):
+        """Ajuste le scroll pour que l'item sélectionné soit visible."""
+        y = HDR_H + 8
+        for i, item in enumerate(items):
+            itype = item.get("type")
+            if i == self._admin_selection:
+                break
+            y += 12 if itype == "sep" else ROW_H
+        if y - self._admin_scroll < HDR_H + 4:
+            self._admin_scroll = max(0, y - HDR_H - 8)
+        elif y - self._admin_scroll + ROW_H > self._h - BTN_H - 4:
+            self._admin_scroll = y + ROW_H - (self._h - BTN_H - 4)
+        self._admin_scroll = max(0, min(self._admin_scroll, self._admin_max_scroll()))
 
     def stop(self):
         self._running = False
@@ -692,7 +780,7 @@ class PygameUI:
     def _r_qr(self):
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
-        btn_area = 70   # hauteur réservée au bouton RETOUR ACCUEIL en bas
+        btn_area = 46   # hauteur réservée au bouton RETOUR ACCUEIL (petit bouton xs)
         if photo and Path(photo).exists():
             try:
                 img = pygame.image.load(photo)
@@ -749,8 +837,9 @@ class PygameUI:
         self._screen.set_clip(clip)
 
         y = HDR_H + 8 - scroll
+        sel = self._admin_selection
 
-        for item in items:
+        for idx, item in enumerate(items):
             itype = item.get("type")
 
             if itype == "sep":
@@ -771,6 +860,12 @@ class PygameUI:
                 continue
 
             cy = y + ROW_H // 2
+
+            # Indicateur de sélection clavier : barre orange à gauche de la ligne
+            if idx == sel and not self._text_editing:
+                bar_x = margin - 8
+                pygame.draw.rect(self._screen, _ACCENT,
+                                 (bar_x, y + 2, 4, ROW_H - 8), border_radius=2)
 
             if itype == "nav":
                 # _NavBtn gère son propre rendu — rien à faire ici
