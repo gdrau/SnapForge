@@ -1,8 +1,8 @@
-# Installation — PhotoBooth Raspberry Pi
+# Installation — SnapForge PhotoBooth Raspberry Pi
 
 ## Matériel requis
 
-- Raspberry Pi 4 (4 Go recommandés)
+- Raspberry Pi 4 (4 Go recommandés) ou Pi 5
 - Carte microSD ≥ 32 Go (Classe 10 / A1)
 - Alimentation officielle Pi 4 (USB-C, 5V/3A)
 - Écran HDMI (800×480 minimum recommandé)
@@ -11,11 +11,13 @@
 - 5 LEDs + résistances 220 Ω
 - Câbles Dupont femelle-femelle
 
+---
+
 ## 1. Système
 
-Flasher **Raspberry Pi OS Bookworm 64-bit** avec Raspberry Pi Imager.
+Flasher **Raspberry Pi OS Trixie 64-bit (Desktop)** avec Raspberry Pi Imager.
 
-Activer SSH et configurer Wi-Fi dans Imager si besoin.
+> Activer SSH, configurer Wi-Fi et nom d'hôte `snapforge` directement dans l'Imager (icône engrenage).
 
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -28,21 +30,23 @@ sudo raspi-config
 sudo apt install -y \
     python3-picamera2 python3-libcamera \
     python3-pygame python3-pil \
-    libopencv-dev python3-opencv \
     cups cups-client \
     git
 
-# Pour gpiozero sur Pi 5 (lgpio backend)
+# Pour Pi 5 (backend lgpio)
 # sudo apt install -y python3-lgpio
 ```
+
+---
 
 ## 2. Clonage et environnement
 
 ```bash
-cd /home/pi
+cd /home/guillaume
 git clone https://github.com/gdrau/SnapForge.git
 cd SnapForge
 
+# --system-site-packages est obligatoire pour accéder à picamera2 (installé via apt)
 python3 -m venv venv --system-site-packages
 source venv/bin/activate
 
@@ -50,7 +54,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> `--system-site-packages` est nécessaire pour que picamera2 (installé via apt) soit accessible dans le venv.
+---
 
 ## 3. Configuration
 
@@ -59,69 +63,122 @@ cp config.example.yaml config.yaml
 nano config.yaml
 ```
 
-Paramètres minimaux à ajuster :
+**Paramètres minimaux à vérifier :**
 
 ```yaml
 app:
-  fullscreen: true    # false pour développement
+  booth_name: "Mon PhotoBooth"    # Nom affiché sur l'écran d'accueil
+  fullscreen: true
+  font_path: assets/fonts/Montserrat-Regular.ttf  # Optionnel (voir section Police)
+
+event:
+  title: "Mon Événement"
+  description: "14 juin 2026"
+
+photos:
+  option_a: 1                     # Première option proposée à l'utilisateur
+  option_b: 4                     # Deuxième option
 
 camera:
-  flip_horizontal: false   # Ajuster si image miroir
+  flip_horizontal: false          # Mettre true si image miroir
+  flip_vertical: false
+
+session:
+  countdown_seconds: 3
 
 qr:
-  base_url: "http://VOTRE-IP-OU-HOSTNAME/photos"
+  base_url: "http://VOTRE-IP/photos"   # URL pour les QR codes
+
+templates:
+  photo_1: portrait_1photo        # Template utilisé pour 1 photo
+  photo_4: landscape_4photos      # Template utilisé pour 4 photos
 ```
 
-## 4. Test initial
+---
+
+## 4. Police personnalisée (optionnel)
+
+Télécharger une police TTF sur [fonts.google.com](https://fonts.google.com) (ex: Montserrat, Raleway, Playfair Display).
+
+```bash
+# Copier la police dans le projet
+cp ~/Téléchargements/Montserrat-Regular.ttf assets/fonts/
+
+# Puis dans config.yaml :
+# app:
+#   font_path: assets/fonts/Montserrat-Regular.ttf
+```
+
+---
+
+## 5. Tests initiaux
 
 ```bash
 source venv/bin/activate
 
-# Tester le GPIO
+# Tester GPIO (boutons + LEDs)
 python scripts/test_gpio.py
 
 # Tester la caméra
 python scripts/test_camera.py
 
-# Lancer en mode fenêtré
+# Lancer en mode fenêtré (test sans plein écran)
 python src/app.py --windowed
 ```
 
-## 5. Installation du service systemd
+---
+
+## 6. Service systemd (démarrage automatique au boot)
+
+Le fichier `snapforge.service` est inclus dans le dépôt :
+
+```ini
+[Unit]
+Description=SnapForge PhotoBooth
+After=network.target graphical.target
+
+[Service]
+Type=simple
+User=guillaume
+Group=guillaume
+WorkingDirectory=/home/guillaume/SnapForge
+ExecStart=/home/guillaume/SnapForge/venv/bin/python src/app.py --config config.yaml
+
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/guillaume/.Xauthority
+Environment=SDL_VIDEODRIVER=x11
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=snapforge
+
+[Install]
+WantedBy=graphical.target
+```
+
+> Adapter `User`, `Group` et les chemins si votre utilisateur n'est pas `guillaume`.
 
 ```bash
-# Vérifier le chemin dans le service
-nano snapforge.service
-# Adapter WorkingDirectory et ExecStart si installé ailleurs que /home/pi/SnapForge
-
-sudo cp snapforge.service /etc/systemd/system/
+# Installer et activer
+sudo cp /home/guillaume/SnapForge/snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable snapforge
 sudo systemctl start snapforge
 
 # Vérifier
 sudo systemctl status snapforge
-journalctl -u snapforge -n 50
+journalctl -u snapforge -f
 ```
 
-## 6. Démarrage automatique sur Pi sans bureau (optionnel)
+---
 
-Si vous utilisez le mode console (Lite) :
-
-```bash
-# Dans /boot/firmware/config.txt, ajouter :
-dtoverlay=vc4-kms-v3d
-
-# Créer un service X minimal ou utiliser directframebuffer SDL
-# Modifier dans snapforge.service :
-Environment=SDL_VIDEODRIVER=fbcon
-Environment=SDL_FBDEV=/dev/fb0
-```
-
-## 7. Réseau — servir les photos via HTTP (pour les QR codes)
+## 7. Réseau — servir les photos via HTTP (QR codes)
 
 ```bash
-# Serveur web simple pour accéder aux photos depuis smartphone
 sudo apt install nginx
 
 sudo nano /etc/nginx/sites-available/snapforge
@@ -132,7 +189,7 @@ server {
     listen 80;
     server_name _;
     location /photos {
-        alias /home/pi/SnapForge/Photo/final;
+        alias /home/guillaume/SnapForge/Photo/final;
         autoindex on;
     }
 }
@@ -143,7 +200,15 @@ sudo ln -s /etc/nginx/sites-available/snapforge /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
-## 8. Installation IA rembg (optionnel)
+Dans `config.yaml`, mettre l'adresse IP ou le hostname du Pi :
+```yaml
+qr:
+  base_url: "http://192.168.1.X/photos"
+```
+
+---
+
+## 8. IA rembg (optionnel)
 
 ```bash
 source venv/bin/activate
@@ -153,38 +218,46 @@ pip install rembg onnxruntime
 python -c "from rembg import new_session; new_session('u2net'); print('rembg OK')"
 ```
 
-Puis dans `config.yaml` :
+Dans `config.yaml` :
 ```yaml
 ai:
   enabled: true
   provider: rembg
-  background_path: assets/backgrounds/default.jpg
+  background_path: assets/backgrounds/default_bg.jpg
 ```
 
-## 9. Configuration imprimante CUPS (optionnel)
+> Le remplacement de fond se fait en arrière-plan après la capture, pas en temps réel.
+
+---
+
+## 9. Imprimante CUPS (optionnel)
 
 ```bash
-sudo usermod -a -G lpadmin pi
-sudo systemctl enable cups
-sudo systemctl start cups
-
+sudo usermod -a -G lpadmin guillaume
+sudo systemctl enable cups && sudo systemctl start cups
 # Interface web CUPS : http://IP:631
-# Ajouter l'imprimante, noter son nom
 ```
 
-Puis dans `config.yaml` :
+Dans `config.yaml` :
 ```yaml
 printing:
   enabled: true
   printer_name: "Canon_SELPHY_CP1300"  # Nom exact de l'imprimante CUPS
 ```
 
-## Mise à jour
+---
+
+## 10. Mise à jour
 
 ```bash
-cd /home/pi/SnapForge
+cd /home/guillaume/SnapForge
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
 sudo systemctl restart snapforge
+```
+
+Ou utiliser le script inclus :
+```bash
+./update.sh
 ```

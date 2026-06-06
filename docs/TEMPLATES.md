@@ -1,102 +1,224 @@
-# Créer un nouveau template
+# Créer et modifier les templates — SnapForge
 
-Un template est un fichier JSON dans `templates/`. Il définit la mise en page de l'image finale.
+Un template est un fichier **JSON** dans le dossier `templates/`. Il définit la mise en page de l'image finale générée après la session photo.
 
-## Structure minimale
+---
+
+## Templates inclus
+
+| Fichier                   | Format         | Dimensions   | Orientation |
+|---------------------------|----------------|--------------|-------------|
+| `portrait_1photo.json`    | 10×15 cm       | 1181×1772 px | Portrait    |
+| `landscape_4photos.json`  | 15×10 cm       | 1772×1181 px | Paysage     |
+
+> Résolution 300 DPI — qualité impression optimale.
+
+---
+
+## Structure complète d'un template
 
 ```json
 {
   "name": "mon_template",
   "description": "Description courte",
-  "width": 1800,
-  "height": 1200,
-  "background_color": [255, 255, 255],
+  "width": 1181,
+  "height": 1772,
+  "background": {
+    "type": "color",
+    "color": [248, 248, 248],
+    "fallback_color": [248, 248, 248]
+  },
   "slots": [
-    { "x": 20, "y": 20, "width": 860, "height": 560 },
-    { "x": 920, "y": 20, "width": 860, "height": 560 }
+    { "x": 103, "y": 257, "width": 975, "height": 1300 }
   ],
-  "text_elements": [],
-  "overlay_path": null
+  "title_zone": {
+    "x": 40, "y": 80, "width": 1101, "height": 90,
+    "size": 92, "color": [26, 26, 26], "align": "center"
+  },
+  "description_zone": {
+    "x": 40, "y": 1590, "width": 1101, "height": 80,
+    "size": 72, "color": [85, 85, 85], "align": "center"
+  },
+  "decorations": [],
+  "overlay_path": null,
+  "text_elements": []
 }
 ```
 
-## Champs
+---
 
-| Champ              | Type          | Description                                          |
-|--------------------|---------------|------------------------------------------------------|
-| `name`             | string        | Identifiant unique (= nom du fichier sans `.json`)  |
-| `description`      | string        | Description affichée dans les logs                  |
-| `width`            | int (px)      | Largeur de l'image finale                           |
-| `height`           | int (px)      | Hauteur de l'image finale                           |
-| `background_color` | [R, G, B]     | Couleur de fond (0-255)                             |
-| `slots`            | array         | Zones de placement des photos                       |
-| `text_elements`    | array         | Textes à superposer (optionnel)                     |
-| `overlay_path`     | string / null | Chemin vers image PNG RGBA à superposer (optionnel) |
+## Champs détaillés
 
-### Slot
+### `background`
+
+Deux modes disponibles :
 
 ```json
-{ "x": 20, "y": 20, "width": 860, "height": 560 }
+"background": { "type": "color", "color": [248, 248, 248] }
 ```
 
-- `x`, `y` : coin supérieur gauche en pixels
-- `width`, `height` : dimensions de la zone
-- La photo est automatiquement recadrée (center-crop) pour remplir la zone
-
-### Text element
-
 ```json
-{
-  "text": "Soirée Mariage 2026",
-  "x": 600,
-  "y": 1160,
-  "size": 40,
-  "color": [255, 255, 255]
+"background": {
+  "type": "image",
+  "path": "assets/backgrounds/mon_fond.jpg",
+  "fallback_color": [248, 248, 248]
 }
 ```
 
-### Overlay PNG
+L'image est redimensionnée et recadrée pour remplir exactement le template. Si le fichier est introuvable, la couleur de fallback est utilisée.
 
-Placez un PNG RGBA (transparence supportée) dans `assets/overlays/` :
+> **Compatibilité ancienne** : le champ `background_color` (tableau RGB) est également supporté.
+
+---
+
+### `slots`
+
+Zones de placement des photos. La photo est **automatiquement recadrée au centre** pour remplir exactement la zone (ratio conservé).
+
+```json
+"slots": [
+  { "x": 103, "y": 257, "width": 975, "height": 1300 }
+]
+```
+
+Pour 4 photos :
+```json
+"slots": [
+  { "x":  30, "y": 115, "width": 848, "height": 468 },
+  { "x": 893, "y": 115, "width": 848, "height": 468 },
+  { "x":  30, "y": 598, "width": 848, "height": 468 },
+  { "x": 893, "y": 598, "width": 848, "height": 468 }
+]
+```
+
+> Le slot N est rempli par la photo N. Si moins de photos que de slots, les slots vides restent en couleur de fond.
+
+---
+
+### `title_zone` et `description_zone`
+
+Zones de texte **dynamiques** — le contenu vient du menu admin (ou de `config.yaml`).
+
+```json
+"title_zone": {
+  "x": 40, "y": 80, "width": 1101, "height": 90,
+  "size": 92,
+  "color": [26, 26, 26],
+  "align": "center"
+}
+```
+
+| Champ   | Description                        |
+|---------|------------------------------------|
+| `x, y`  | Position du coin supérieur gauche  |
+| `width, height` | Dimensions de la zone        |
+| `size`  | Taille police en points (à 300 DPI → grands nombres) |
+| `color` | Couleur RGB [R, G, B]              |
+| `align` | `"center"`, `"left"`, ou `"right"` |
+
+Le texte est automatiquement tronqué s'il dépasse la largeur de la zone.
+
+---
+
+### `decorations`
+
+Éléments graphiques statiques (lignes, rectangles).
+
+```json
+"decorations": [
+  { "type": "line", "x1": 40, "y1": 152, "x2": 1141, "y2": 152, "color": [255, 140, 0], "width": 4 },
+  { "type": "rect", "x": 40, "y": 1640, "w": 1101, "h": 6, "color": [200, 200, 200] }
+]
+```
+
+---
+
+### `overlay_path`
+
+Fichier PNG RGBA superposé par-dessus toutes les photos (cadre, filigrane…) :
 
 ```json
 "overlay_path": "assets/overlays/cadre_dore.png"
 ```
 
-L'overlay est redimensionné aux dimensions du template et fusionné par-dessus les photos.
+Le PNG est redimensionné aux dimensions du template. La transparence est respectée.
 
-## Activation du template
+---
 
-Dans `config.yaml` :
+### `text_elements`
+
+Textes **statiques** (ne changent pas entre sessions) :
+
+```json
+"text_elements": [
+  { "text": "© SnapForge 2026", "x": 500, "y": 1740, "size": 24, "color": [180, 180, 180] }
+]
+```
+
+---
+
+## Activation d'un template
+
+Dans `config.yaml`, mapper chaque nombre de photos à son template :
 
 ```yaml
 templates:
-  default: mon_template   # Doit correspondre au nom du fichier sans .json
+  photo_1: portrait_1photo
+  photo_2: portrait_1photo
+  photo_3: portrait_1photo
+  photo_4: landscape_4photos
+  default: portrait_1photo
   templates_dir: templates
 ```
 
-## Exemple : template portrait 2 photos
+**Depuis le menu admin (ESC → Photos/Templates)** : les templates disponibles peuvent être assignés directement sans modifier le fichier YAML.
+
+---
+
+## Calcul des dimensions pour l'impression
+
+| Format papier | DPI | Dimensions pixels |
+|---------------|-----|-------------------|
+| 10×15 cm (A6) | 300 | 1181×1772 px      |
+| 15×10 cm (A6 paysage) | 300 | 1772×1181 px |
+| 13×18 cm | 300 | 1535×2126 px      |
+| 9×13 cm | 300 | 1063×1535 px      |
+
+Formule : `px = cm ÷ 2.54 × DPI`
+
+**Marges de sécurité** : laisser 15-20 px de marge sur les bords pour l'impression.
+
+---
+
+## Exemple : template duo portrait (2 photos)
 
 ```json
 {
   "name": "duo_portrait",
-  "description": "Deux portraits côte à côte",
-  "width": 1840,
-  "height": 960,
-  "background_color": [30, 30, 30],
+  "description": "2 portraits côte à côte sur fond blanc",
+  "width": 1772,
+  "height": 1181,
+  "background": { "type": "color", "color": [250, 250, 248] },
   "slots": [
-    { "x":  20, "y": 20, "width": 890, "height": 920 },
-    { "x": 930, "y": 20, "width": 890, "height": 920 }
+    { "x":  20, "y": 100, "width": 860, "height": 980 },
+    { "x": 892, "y": 100, "width": 860, "height": 980 }
   ],
-  "text_elements": [
-    { "text": "Mon Événement", "x": 760, "y": 10, "size": 28, "color": [200, 200, 200] }
-  ]
+  "title_zone": {
+    "x": 20, "y": 10, "width": 1732, "height": 78,
+    "size": 64, "color": [30, 30, 30], "align": "center"
+  },
+  "description_zone": {
+    "x": 20, "y": 1092, "width": 1732, "height": 70,
+    "size": 36, "color": [100, 100, 100], "align": "center"
+  },
+  "decorations": [],
+  "text_elements": []
 }
 ```
 
-## Conseils
+Sauvegarder sous `templates/duo_portrait.json`, puis dans `config.yaml` :
 
-- Laissez 15-20 px de marge sur les bords pour un meilleur rendu à l'impression.
-- Testez avec `python scripts/test_camera.py` puis lancez manuellement une session.
-- Pour des bordures entre les photos, augmentez l'écart entre les slots.
-- La résolution recommandée pour l'impression A6 (10×15 cm) à 300 DPI est 1772×1181 px.
+```yaml
+templates:
+  photo_2: duo_portrait
+```

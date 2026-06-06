@@ -1,4 +1,4 @@
-# Créer, pousser et mettre à jour le projet SnapForge
+# Créer, pousser et mettre à jour SnapForge
 
 ---
 
@@ -7,87 +7,61 @@
 ### Étape 1 — Créer le dépôt sur GitHub
 
 1. Connectez-vous sur [github.com](https://github.com)
-2. Cliquez sur **"New repository"** (bouton vert en haut à droite)
-3. Remplissez :
-   - **Repository name** : `photobooth` (ou le nom de votre choix)
-   - **Description** : `SnapForge Raspberry Pi — Picamera2 + Pygame`
-   - **Visibility** : Public ou Private selon votre préférence
-   - ⚠️ **Ne cochez rien** dans "Initialize this repository" (pas de README, pas de .gitignore)
-4. Cliquez sur **"Create repository"**
-5. GitHub affiche une page avec une URL du type :
-   ```
-   https://github.com/gdrau/SnapForge.git
-   ```
-   Copiez cette URL, vous en aurez besoin à l'étape 3.
-
----
+2. Cliquez **"New repository"**
+3. Paramètres :
+   - **Repository name** : `SnapForge`
+   - **Visibility** : Public ou Private
+   - ⚠️ **Ne cochez rien** (pas de README, pas de .gitignore à l'init)
+4. Cliquez **"Create repository"**
+5. Copiez l'URL : `https://github.com/gdrau/SnapForge.git`
 
 ### Étape 2 — Configurer votre identité Git (si pas encore fait)
-
-Ouvrez un terminal dans `c:\projets\SnapForge` :
 
 ```bash
 git config --global user.name "Votre Nom"
 git config --global user.email "votre@email.com"
 ```
 
----
-
-### Étape 3 — Lier votre dépôt local à GitHub et pousser
+### Étape 3 — Pousser vers GitHub
 
 ```bash
-# Depuis c:\projets\SnapForge
+# Depuis c:\projets\PhotoBooth (Windows)
 git remote add origin https://github.com/gdrau/SnapForge.git
 git branch -M main
 git push -u origin main
 ```
 
-> Si GitHub vous demande un mot de passe, utilisez un **Personal Access Token** (pas votre mot de passe).
-> Générez-en un sur : GitHub → Settings → Developer settings → Personal access tokens → Generate new token (cochez `repo`).
-
----
-
-### Étape 4 — Vérifier que tout est en ligne
-
-Rendez-vous sur `https://github.com/gdrau/SnapForge` — vous devez voir tous vos fichiers et le README s'afficher.
+> Si GitHub demande une authentification, utilisez un **Personal Access Token** (pas votre mot de passe).  
+> Générer : GitHub → Settings → Developer settings → Personal access tokens → Generate new token (cocher `repo`).
 
 ---
 
 ## 2. Mettre à jour le dépôt GitHub après une modification
 
-Chaque fois que vous modifiez des fichiers sur votre PC, suivez cette procédure :
-
 ```bash
-# Depuis c:\projets\SnapForge
-
-# 1. Voir ce qui a changé
+# Voir ce qui a changé
 git status
 
-# 2. Ajouter les fichiers modifiés
-#    (option a) tout ajouter sauf ce qui est dans .gitignore :
+# Ajouter les fichiers modifiés
 git add .
+# OU fichier par fichier :
+git add src/ui/pygame_ui.py templates/portrait_1photo.json
 
-#    (option b) ajouter fichier par fichier si vous voulez être précis :
-git add src/ui/pygame_ui.py
-git add src/state_machine.py
+# Créer un commit
+git commit -m "Description des modifications"
 
-# 3. Créer un commit avec un message clair
-git commit -m "Description courte de ce que vous avez changé"
-
-# 4. Pousser vers GitHub
+# Pousser vers GitHub
 git push
 ```
 
 ### Exemples de messages de commit
 
 ```bash
-git commit -m "Correction taille boutons écran format"
-git commit -m "Ajout template portrait duo"
-git commit -m "Amélioration menu admin : ajout option template"
-git commit -m "Fix encodage UTF-8 logs Windows"
+git commit -m "Ajout police Montserrat"
+git commit -m "Correction navigation menu admin"
+git commit -m "Nouveau template duo portrait 2 photos"
+git commit -m "Fix timeout camera au demarrage"
 ```
-
-> **Bonne pratique** : faites un commit par modification logique, pas un seul gros commit pour tout.
 
 ---
 
@@ -101,36 +75,33 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y \
     python3-picamera2 python3-libcamera \
     python3-pygame python3-pil \
-    git curl
+    git
 ```
 
 ### Installation
 
 ```bash
-cd /home/pi
+cd /home/guillaume
 
-# Cloner le projet depuis GitHub
+# Cloner depuis GitHub
 git clone https://github.com/gdrau/SnapForge.git
 cd SnapForge
 
-# Créer la configuration locale
+# Configuration
 cp config.example.yaml config.yaml
 nano config.yaml
-# → Adaptez les paramètres à votre matériel (résolution, GPIO, etc.)
+# → Adapter : booth_name, base_url QR, option_a/option_b, etc.
 
-# Créer l'environnement Python
-# --system-site-packages donne accès à picamera2 installé via apt
+# Environnement Python
 python3 -m venv venv --system-site-packages
 source venv/bin/activate
-
-# Installer les dépendances
 pip install -r requirements.txt
 
-# Vérifier que tout fonctionne
+# Tests
 python scripts/test_camera.py
 python scripts/test_gpio.py
 
-# Lancer le photobooth
+# Lancer
 python src/app.py
 ```
 
@@ -145,14 +116,14 @@ After=network.target graphical.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
+User=guillaume
+Group=guillaume
 
-WorkingDirectory=/home/pi/SnapForge
-ExecStart=/home/pi/SnapForge/venv/bin/python src/app.py --config config.yaml
+WorkingDirectory=/home/guillaume/SnapForge
+ExecStart=/home/guillaume/SnapForge/venv/bin/python src/app.py --config config.yaml
 
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=XAUTHORITY=/home/guillaume/.Xauthority
 Environment=SDL_VIDEODRIVER=x11
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONIOENCODING=utf-8
@@ -168,22 +139,22 @@ SyslogIdentifier=snapforge
 WantedBy=graphical.target
 ```
 
-> Si vous avez cloné le projet ailleurs que dans `/home/pi/SnapForge`, éditez `WorkingDirectory` et `ExecStart` avant de copier :
+> Si vous avez cloné ailleurs que `/home/guillaume/SnapForge`, adaptez `User`, `Group`, `WorkingDirectory` et `ExecStart` :
 > ```bash
-> nano /home/pi/SnapForge/snapforge.service
+> nano /home/guillaume/SnapForge/snapforge.service
 > ```
 
 ```bash
-# Installer et activer le service
-sudo cp /home/pi/SnapForge/snapforge.service /etc/systemd/system/
+# Installer et activer
+sudo cp /home/guillaume/SnapForge/snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable snapforge
 sudo systemctl start snapforge
 
-# Vérifier que le service tourne
+# Vérifier
 sudo systemctl status snapforge
 
-# Voir les logs en direct
+# Logs en direct
 journalctl -u snapforge -f
 ```
 
@@ -191,26 +162,25 @@ journalctl -u snapforge -f
 
 ## 4. Mettre à jour le Raspberry Pi après une modification
 
-Quand vous avez poussé des modifications sur GitHub depuis votre PC, mettez à jour le Raspberry Pi :
+Après avoir poussé des changements depuis votre PC :
 
 ```bash
-# Connexion SSH au Raspberry Pi depuis votre PC
-ssh pi@ADRESSE_IP_DU_PI
+# Connexion SSH
+ssh guillaume@ADRESSE_IP_DU_PI
 
-# Se placer dans le projet
-cd /home/pi/SnapForge
+cd /home/guillaume/SnapForge
 
-# Arrêter le service si actif
+# Arrêter le service
 sudo systemctl stop snapforge
 
-# Récupérer les dernières modifications depuis GitHub
+# Récupérer les mises à jour
 git pull
 
-# Si vous avez ajouté des dépendances Python
+# Si des dépendances ont changé
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Redémarrer le service
+# Redémarrer
 sudo systemctl start snapforge
 
 # Vérifier
@@ -218,43 +188,77 @@ sudo systemctl status snapforge
 journalctl -u snapforge -n 30
 ```
 
-### Script de mise à jour rapide (optionnel)
+### Script de mise à jour rapide
 
-Créez un fichier `/home/pi/SnapForge/update.sh` :
+Créez `update.sh` à la racine du projet (déjà inclus) :
 
 ```bash
 #!/bin/bash
 set -e
-cd /home/pi/SnapForge
+cd /home/guillaume/SnapForge
 echo "Arrêt du service..."
 sudo systemctl stop snapforge
-echo "Récupération des mises à jour..."
+echo "Mise à jour depuis GitHub..."
 git pull
 echo "Mise à jour des dépendances..."
 source venv/bin/activate
 pip install -r requirements.txt --quiet
 echo "Redémarrage..."
 sudo systemctl start snapforge
-echo "Mise à jour terminée."
+echo "Terminé."
 sudo systemctl status snapforge --no-pager
 ```
 
-Rendez-le exécutable :
-
 ```bash
-chmod +x /home/pi/SnapForge/update.sh
-```
-
-Utilisation :
-
-```bash
-cd /home/pi/SnapForge
+chmod +x update.sh
 ./update.sh
 ```
 
 ---
 
-## Résumé des commandes essentielles
+## 5. Dépannage git courant
+
+### Dépôt corrompu (object file empty)
+
+```bash
+cd /home/guillaume
+
+# Sauvegarder config.yaml (gitignored)
+cp SnapForge/config.yaml /tmp/config_backup.yaml
+
+# Supprimer et recloner
+rm -rf SnapForge
+git clone https://github.com/gdrau/SnapForge.git
+cd SnapForge
+
+# Restaurer la config
+cp /tmp/config_backup.yaml config.yaml
+
+# Recréer le venv
+python3 -m venv venv --system-site-packages
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Fichier local bloquant le pull
+
+```bash
+git status                          # Voir les fichiers modifiés localement
+git diff src/camera/picamera2_camera.py  # Voir les différences
+git checkout src/camera/picamera2_camera.py  # Annuler les modifications locales
+git pull
+```
+
+### Vider le cache Python (ImportError inattendu)
+
+```bash
+find . -name "*.pyc" -delete
+find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+```
+
+---
+
+## 6. Résumé des commandes essentielles
 
 | Action | Commande |
 |--------|----------|
@@ -263,6 +267,8 @@ cd /home/pi/SnapForge
 | Créer un commit | `git commit -m "message"` |
 | Pousser sur GitHub | `git push` |
 | Récupérer depuis GitHub (Pi) | `git pull` |
-| Historique des commits | `git log --oneline` |
-| Annuler les modifs non commitées | `git restore .` |
+| Historique des commits | `git log --oneline -10` |
+| Annuler modifs non commitées | `git restore .` |
 | Voir les différences | `git diff` |
+| Logs service | `journalctl -u snapforge -f` |
+| Redémarrer service | `sudo systemctl restart snapforge` |
