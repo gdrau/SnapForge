@@ -301,69 +301,83 @@ class PygameUI:
     # Menu admin
     # ------------------------------------------------------------------
 
+    # --- Admin : état saisie texte ---
+    _text_editing: Optional[str] = None   # clé du champ en cours d'édition
+    _admin_scroll: int = 0
+
     def show_admin(self, settings: dict):
         self._screen_name = "admin"
         self._info = {"settings": dict(settings)}
-        self._rebuild_admin_buttons(settings)
+        self._text_editing = None
+        self._admin_scroll = 0
+        self._rebuild_admin_ui(settings)
 
-    def _rebuild_admin_buttons(self, settings: dict):
-        btns: List[_Btn] = []
-        margin = 30
-        row_h = 64
-        panel_x = margin
+    def _rebuild_admin_ui(self, settings: dict):
+        """Reconstruit les boutons du menu admin selon les settings courants."""
+        margin = 28
+        row_h = 46
+        row_gap = 6
         panel_w = self._w - 2 * margin
-        val_w = 220
-        val_x = panel_x + panel_w - val_w
+        val_w = 210
+        val_x = margin + panel_w - val_w
+        header_h = 48
+        start_y = header_h + 10
 
-        # Défini l'ordre et les items du menu
-        items = [
-            ("Format option A",  "layout_a",     [1, 2, 3, 4], lambda v: f"{v} PHOTO{'S' if v>1 else ''}"),
-            ("Format option B",  "layout_b",     [1, 2, 3, 4], lambda v: f"{v} PHOTO{'S' if v>1 else ''}"),
-            ("Compte a rebours", "countdown",    [2, 3, 5, 10], lambda v: f"{v} secondes"),
-            ("IA fond",          "ai_enabled",   [False, True], lambda v: "ACTIVEE" if v else "DESACTIVEE"),
-            ("Impression",       "print_enabled",[False, True], lambda v: "ACTIVEE" if v else "DESACTIVEE"),
-            ("Upload cloud",     "cloud_enabled",[False, True], lambda v: "ACTIVE" if v else "DESACTIVE"),
+        # Items cyclables
+        cycle_items = [
+            ("Format option A",  "layout_a",      [1, 2, 3, 4],  lambda v: f"{v} PHOTO{'S' if v>1 else ''}"),
+            ("Format option B",  "layout_b",      [1, 2, 3, 4],  lambda v: f"{v} PHOTO{'S' if v>1 else ''}"),
+            ("Compte a rebours", "countdown",     [2, 3, 5, 10], lambda v: f"{v} sec"),
+            ("IA fond",          "ai_enabled",    [False, True],  lambda v: "ACTIVEE" if v else "DESACTIVEE"),
+            ("Impression",       "print_enabled", [False, True],  lambda v: "ACTIVEE" if v else "DESACTIVEE"),
+            ("Upload cloud",     "cloud_enabled", [False, True],  lambda v: "ACTIVE" if v else "DESACTIVE"),
         ]
 
-        header_h = 70
-        separator_h = 16
-        start_y = header_h + separator_h
-
-        for i, (label, key, values, fmt) in enumerate(items):
-            y = start_y + i * (row_h + 8)
+        btns: List[_Btn] = []
+        for i, (label, key, values, fmt) in enumerate(cycle_items):
+            y = start_y + i * (row_h + row_gap)
             current = settings.get(key, values[0])
             idx = values.index(current) if current in values else 0
             next_val = values[(idx + 1) % len(values)]
-
-            # Couleur selon la valeur
-            if isinstance(current, bool):
-                color = _GREEN if current else _DISABLED
-            else:
-                color = _BLUE
-
-            label_str = fmt(current)
-            new_settings = dict(settings)
-            new_settings[key] = next_val
-
+            color = (_GREEN if current else _DISABLED) if isinstance(current, bool) else _BLUE
+            new_s = {**settings, key: next_val}
             btns.append(_Btn(
-                (val_x, y, val_w, row_h - 10), label_str, color,
-                font=self._fonts["sm"], action="admin_change", data=dict(new_settings),
-                border_radius=8,
+                (val_x, y, val_w, row_h - 4), fmt(current), color,
+                font=self._fonts["xs"], action="admin_change", data=new_s, border_radius=6,
             ))
 
-        # Boutons d'action en bas
-        action_y = start_y + len(items) * (row_h + 8) + 10
-        half = (panel_w - 10) // 2
+        # Champs texte (cliquables pour activer l'édition)
+        text_items = [("Titre", "event_title"), ("Description", "event_description")]
+        text_start_y = start_y + len(cycle_items) * (row_h + row_gap) + 14
+        for i, (label, key) in enumerate(text_items):
+            y = text_start_y + i * (row_h + row_gap)
+            is_active = self._text_editing == key
+            color = _ACCENT if is_active else _PANEL
+            btns.append(_Btn(
+                (val_x - 80, y, val_w + 80, row_h - 4), "", color,
+                font=self._fonts["xs"], action="admin_edit_text", data=key, border_radius=6,
+            ))
+
+        # Boutons action
+        action_y = text_start_y + len(text_items) * (row_h + row_gap) + 14
+        half = (panel_w - 8) // 2
         btns.append(_Btn(
-            (panel_x, action_y, half, 55), "SAUVEGARDER", _GREEN,
-            font=self._fonts["sm"], action="admin_save", data=dict(settings), border_radius=10,
+            (margin, action_y, half, 46), "SAUVEGARDER", _GREEN,
+            font=self._fonts["sm"], action="admin_save", data=None, border_radius=8,
         ))
         btns.append(_Btn(
-            (panel_x + half + 10, action_y, half, 55), "ANNULER", _GRAY,
-            font=self._fonts["sm"], action="admin_cancel", data=None, border_radius=10,
+            (margin + half + 8, action_y, half, 46), "ANNULER", _GRAY,
+            font=self._fonts["sm"], action="admin_cancel", data=None, border_radius=8,
         ))
+
         self._buttons = btns
-        self._info["items"] = items  # pour le rendu des labels
+        self._info["cycle_items"] = cycle_items
+        self._info["text_items"] = text_items
+        self._info["layout"] = {
+            "start_y": start_y, "row_h": row_h, "row_gap": row_gap,
+            "text_start_y": text_start_y, "val_x": val_x, "val_w": val_w,
+            "margin": margin, "action_y": action_y,
+        }
 
     # ------------------------------------------------------------------
     # Boucle principale (thread principal uniquement)
@@ -376,24 +390,67 @@ class PygameUI:
                 if event.type == pygame.QUIT:
                     self._running = False
                 elif event.type == pygame.KEYDOWN:
-                    self._on_key(event)
+                    if not self._handle_text_input(event):
+                        self._on_key(event)
+                elif event.type == pygame.MOUSEWHEEL and self._screen_name == "admin":
+                    self._admin_scroll = max(0, self._admin_scroll - event.y * 20)
+
+                # Translate les positions des boutons pour le scroll admin
+                translated_pos = None
+                if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                    ox, oy = event.pos
+                    if self._screen_name == "admin":
+                        translated_pos = (ox, oy + self._admin_scroll)
+
                 for btn in list(self._buttons):
-                    r = btn.handle(event)
+                    if translated_pos:
+                        # Créer un événement virtuel avec position scrollée
+                        fake = pygame.event.Event(event.type, {**event.__dict__, 'pos': translated_pos})
+                        r = btn.handle(fake)
+                    else:
+                        r = btn.handle(event)
                     if r:
                         action, data = r
-                        # Si admin_change : reconstruire les boutons immédiatement
                         if action == "admin_change" and isinstance(data, dict):
-                            self.show_admin(data)
-                        # Si admin_save : mettre à jour le bouton save avec data courant
-                        if action == "admin_save":
-                            data = dict(self._info.get("settings", data or {}))
-                        self._emit(action, data)
+                            self._info["settings"] = data
+                            self._rebuild_admin_ui(data)
+                        elif action == "admin_edit_text" and isinstance(data, str):
+                            self._text_editing = data
+                            self._rebuild_admin_ui(self._info.get("settings", {}))
+                        elif action == "admin_save":
+                            data = dict(self._info.get("settings", {}))
+                            self._emit(action, data)
+                        else:
+                            self._emit(action, data)
             self._render()
             self._clock.tick(self._fps)
         pygame.quit()
 
     def stop(self):
         self._running = False
+
+    def _handle_text_input(self, event) -> bool:
+        """Gère la saisie clavier dans un champ texte admin. Retourne True si consommé."""
+        if self._screen_name != "admin" or self._text_editing is None:
+            return False
+        settings = self._info.get("settings", {})
+        current = str(settings.get(self._text_editing, ""))
+        if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+            self._text_editing = None
+            self._rebuild_admin_ui(settings)
+            return True
+        if event.key == pygame.K_ESCAPE:
+            self._text_editing = None
+            self._rebuild_admin_ui(settings)
+            return True  # ESC ferme l'édition mais pas le menu
+        if event.key == pygame.K_BACKSPACE:
+            settings[self._text_editing] = current[:-1]
+        elif event.unicode and event.unicode.isprintable():
+            if len(current) < 60:
+                settings[self._text_editing] = current + event.unicode
+        self._info["settings"] = settings
+        self._rebuild_admin_ui(settings)
+        return True
 
     def _on_key(self, event):
         if event.key == pygame.K_ESCAPE:
@@ -575,44 +632,88 @@ class PygameUI:
     # --- ADMIN ---
 
     def _r_admin(self):
+        """Rendu du menu admin avec défilement."""
         self._screen.fill(_DARK)
         settings = self._info.get("settings", {})
-        items = self._info.get("items", [])
+        layout = self._info.get("layout", {})
+        if not layout:
+            return
 
-        # En-tête
-        header_h = 62
+        scroll = self._admin_scroll
+        header_h = 48
+        margin = layout.get("margin", 28)
+        row_h = layout.get("row_h", 46)
+        row_gap = layout.get("row_gap", 6)
+        start_y = layout.get("start_y", header_h + 10)
+        text_start_y = layout.get("text_start_y", start_y + 6 * (row_h + row_gap) + 14)
+        val_x = layout.get("val_x", self._w - 238)
+        action_y = layout.get("action_y", text_start_y + 2 * (row_h + row_gap) + 14)
+
+        # Zone de clip (sous le header)
+        clip_rect = pygame.Rect(0, header_h, self._w, self._h - header_h)
+        self._screen.set_clip(clip_rect)
+
+        cycle_items = self._info.get("cycle_items", [])
+        text_items = self._info.get("text_items", [])
+
+        # --- Cycle items ---
+        for i, (label, key, _, __) in enumerate(cycle_items):
+            y = start_y + i * (row_h + row_gap) - scroll
+            if y + row_h < header_h or y > self._h:
+                continue
+            cy = y + (row_h - 4) // 2
+            if i > 0:
+                pygame.draw.line(self._screen, _PANEL, (margin, y - 3), (self._w - margin, y - 3), 1)
+            self._text(label, "xs", _LIGHT_GRAY, margin, cy, center=False)
+
+        # --- Séparateur section événement ---
+        sep_y = text_start_y - 10 - scroll
+        if header_h <= sep_y <= self._h:
+            pygame.draw.line(self._screen, _ACCENT, (margin, sep_y), (self._w - margin, sep_y), 2)
+            self._text("EVENEMENT", "xs", _ACCENT, margin, sep_y - 14)
+
+        # --- Text input items ---
+        for i, (label, key) in enumerate(text_items):
+            y = text_start_y + i * (row_h + row_gap) - scroll
+            if y + row_h < header_h or y > self._h:
+                continue
+            cy = y + (row_h - 4) // 2
+            is_active = self._text_editing == key
+            self._text(label, "xs", _LIGHT_GRAY, margin, cy, center=False)
+
+            # Zone de saisie avec texte courant
+            field_x = val_x - 80
+            field_w = 210 + 80
+            field_h = row_h - 4
+            bg_color = _ACCENT if is_active else _PANEL
+            pygame.draw.rect(self._screen, bg_color, (field_x, y, field_w, field_h), border_radius=6)
+            text_val = str(settings.get(key, ""))
+            display = text_val
+            if is_active:
+                # Curseur clignotant
+                if int(time.time() * 2) % 2 == 0:
+                    display += "|"
+            # Tronquer si trop long
+            font = self._fonts["xs"]
+            while font.size(display)[0] > field_w - 16 and len(display) > 1:
+                display = display[1:]
+            self._text(display, "xs", _WHITE, field_x + 8, y + (field_h - font.get_height()) // 2)
+
+        self._screen.set_clip(None)
+
+        # --- En-tête fixe (non scrollable) ---
         pygame.draw.rect(self._screen, _PANEL, (0, 0, self._w, header_h))
         self._text("CONFIGURATION", "md", _WHITE, self._w // 2, header_h // 2, center=True)
-        self._text("ESC = annuler", "xs", _DISABLED, self._w - 10, header_h // 2,
-                   center=False, align_right=True)
+        hint = "Entree = confirmer" if self._text_editing else "ESC = annuler"
+        self._text(hint, "xs", _DISABLED, self._w - 10, header_h // 2, align_right=True)
 
-        margin = 30
-        row_h = 64
-        panel_w = self._w - 2 * margin
-        val_w = 220
-        val_x = margin + panel_w - val_w
-        start_y = header_h + 14
-
-        for i, (label, key, values, fmt) in enumerate(items):
-            y = start_y + i * (row_h + 8)
-            current = settings.get(key, values[0])
-            cy = y + (row_h - 10) // 2 - 2
-
-            # Séparateur
-            if i > 0:
-                pygame.draw.line(self._screen, _PANEL,
-                                 (margin, y - 4), (self._w - margin, y - 4), 1)
-
-            # Label
-            self._text(label, "sm", _LIGHT_GRAY, margin, cy, center=False)
-
-            # Valeur formatée (rendu par les boutons, juste le texte ici pour debug)
-            # Les boutons sont dessinés après dans run()
-
-        # Légende clic
-        action_y = start_y + len(items) * (row_h + 8) + 68
-        self._text("Cliquez sur une valeur pour la changer", "xs", _DISABLED,
-                   self._w // 2, action_y, center=True)
+        # Indicateur de scroll si contenu dépasse
+        total_h = action_y + 46 + 14
+        if total_h > self._h - header_h:
+            pct = scroll / max(1, total_h - (self._h - header_h))
+            bar_h = max(30, int((self._h - header_h) * (self._h - header_h) / total_h))
+            bar_y = header_h + int(pct * (self._h - header_h - bar_h))
+            pygame.draw.rect(self._screen, _GRAY, (self._w - 6, bar_y, 4, bar_h), border_radius=2)
 
     # ------------------------------------------------------------------
     # Helpers rendu texte + indicateurs boutons

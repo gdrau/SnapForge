@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class Template:
-    """Définit la mise en page d'une composition finale."""
 
     def __init__(self, data: dict):
         self.name: str = data["name"]
@@ -19,6 +18,9 @@ class Template:
         self.slots: list = data["slots"]
         self.overlay_path: Optional[str] = data.get("overlay_path")
         self.text_elements: list = data.get("text_elements", [])
+        self.title_zone: Optional[dict] = data.get("title_zone")
+        self.description_zone: Optional[dict] = data.get("description_zone")
+        self.decorations: list = data.get("decorations", [])
 
     @classmethod
     def from_file(cls, path: str) -> "Template":
@@ -30,7 +32,6 @@ class Template:
 
 
 class Composer:
-    """Assemble des photos brutes en une image finale via un template."""
 
     def __init__(self, config):
         self._config = config
@@ -59,6 +60,8 @@ class Composer:
         template_name: str,
         output_path: str,
         font_path: Optional[str] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> str:
         template = self._templates.get(template_name)
         if not template:
@@ -67,6 +70,7 @@ class Composer:
 
         canvas = Image.new("RGB", (template.width, template.height), template.background_color)
 
+        # Photos
         for i, photo_path in enumerate(photo_paths):
             slot = template.slot(i)
             if not slot:
@@ -78,9 +82,23 @@ class Composer:
             except Exception as e:
                 logger.error(f"Erreur placement photo {photo_path}: {e}")
 
+        # Overlay PNG
         if template.overlay_path:
             self._apply_overlay(canvas, template.overlay_path, template.width, template.height)
 
+        # Décorations (lignes, etc.)
+        for dec in template.decorations:
+            self._draw_decoration(canvas, dec)
+
+        # Titre dynamique
+        if template.title_zone and title:
+            self._draw_zone_text(canvas, template.title_zone, title, font_path)
+
+        # Description dynamique
+        if template.description_zone and description:
+            self._draw_zone_text(canvas, template.description_zone, description, font_path)
+
+        # Textes statiques du template
         for elem in template.text_elements:
             try:
                 self._draw_text(canvas, elem, font_path)
@@ -93,16 +111,18 @@ class Composer:
         logger.info(f"Image finale -> {output_path}")
         return output_path
 
+    # ------------------------------------------------------------------
+    # Helpers rendu
+    # ------------------------------------------------------------------
+
     def _fit_crop(self, img: Image.Image, tw: int, th: int) -> Image.Image:
         """Redimensionne et recadre au centre pour remplir exactement tw×th."""
         src_r = img.width / img.height
         dst_r = tw / th
         if src_r > dst_r:
-            new_h = th
-            new_w = int(new_h * src_r)
+            new_h, new_w = th, int(th * src_r)
         else:
-            new_w = tw
-            new_h = int(new_w / src_r)
+            new_w, new_h = tw, int(tw / src_r)
         img = img.resize((new_w, new_h), Image.LANCZOS)
         left = (new_w - tw) // 2
         top = (new_h - th) // 2
@@ -120,22 +140,81 @@ class Composer:
         except Exception as e:
             logger.error(f"Erreur overlay: {e}")
 
+    def _draw_decoration(self, canvas: Image.Image, dec: dict):
+        """Dessine une décoration définie dans le template (ligne, rectangle…)."""
+        draw = ImageDraw.Draw(canvas)
+        dtype = dec.get("type", "line")
+        color = tuple(dec.get("color", [0, 0, 0]))
+        width = dec.get("width", 2)
+        if dtype == "line":
+            draw.line(
+                [(dec["x1"], dec["y1"]), (dec["x2"], dec["y2"])],
+                fill=color, width=width
+            )
+        elif dtype == "rect":
+            draw.rectangle(
+                [(dec["x"], dec["y"]), (dec["x"] + dec["w"], dec["y"] + dec["h"])],
+                fill=color
+            )
+
+    def _draw_zone_text(self, canvas: Image.Image, zone: dict,
+                        text: str, font_path: Optional[str]):
+        """Dessine un texte centré dans une zone rectangulaire."""
+        draw = ImageDraw.Draw(canvas)
+        zx, zy = zone["x"], zone["y"]
+        zw, zh = zone["width"], zone["height"]
+        size = zone.get("size", 32)
+        color = tuple(zone.get("color", [0, 0, 0]))
+        align = zone.get("align", "center")
+
+        font = self._load_font(font_path, size)
+
+        # Tronquer si le texte est trop long
+        while font.getlength(text) > zw - 20 and len(text) > 3:
+            text = text[:-1]
+
+        tw = int(font.getlength(text))
+        _, _, _, th = font.getbbox(text)
+
+        if align == "center":
+            tx = zx + (zw - tw) // 2
+        elif align == "right":
+            tx = zx + zw - tw - 10
+        else:
+            tx = zx + 10
+
+        ty = zy + (zh - th) // 2
+        draw.text((tx, ty), text, fill=color, font=font)
+
     def _draw_text(self, canvas: Image.Image, elem: dict, font_path: Optional[str]):
         draw = ImageDraw.Draw(canvas)
         text = elem.get("text", "")
         x, y = elem.get("x", 0), elem.get("y", 0)
         size = elem.get("size", 24)
         color = tuple(elem.get("color", [0, 0, 0]))
-        font = None
+        font = self._load_font(font_path, size)
+        draw.text((x, y), text, fill=color, font=font)
+
+    def _load_font(self, font_path: Optional[str], size: int) -> ImageFont.FreeTypeFont:
         if font_path and Path(font_path).exists():
             try:
-                font = ImageFont.truetype(font_path, size)
+                return ImageFont.truetype(font_path, size)
             except Exception:
                 pass
-        draw.text((x, y), text, fill=color, font=font or ImageFont.load_default())
+        try:
+            # Essaie les polices système courantes
+            for name in ("DejaVuSans.ttf", "arial.ttf", "LiberationSans-Regular.ttf"):
+                for base in ("/usr/share/fonts/truetype/dejavu/",
+                             "/usr/share/fonts/truetype/liberation/",
+                             "C:/Windows/Fonts/"):
+                    p = Path(base) / name
+                    if p.exists():
+                        return ImageFont.truetype(str(p), size)
+        except Exception:
+            pass
+        return ImageFont.load_default()
 
     def _compose_auto(self, photo_paths: List[str], output_path: str) -> str:
-        """Mise en page automatique si aucun template ne correspond."""
         n = len(photo_paths)
         if n == 0:
             raise ValueError("Aucune photo à composer")

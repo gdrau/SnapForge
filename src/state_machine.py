@@ -88,7 +88,7 @@ class StateMachine:
         self._available_layouts: List[int] = config.get("photos.available_layouts", [1, 4])
         self._default_layout: int = config.get("photos.default_layout", self._available_layouts[0])
         self._countdown_s: int = config.get("camera.countdown_seconds", 3)
-        self._template: str = config.get("templates.default", "strip_classic")
+        self._template: str = config.get("templates.default", "portrait_1photo")
         self._font_path: Optional[str] = config.get("app.font_path")
         self._raw_dir: str = config.get("photos.raw_dir", "Photo/raw")
         self._final_dir: str = config.get("photos.final_dir", "Photo/final")
@@ -208,11 +208,19 @@ class StateMachine:
                 self._session.processed_photos = photos
 
             self._ui.show_processing("Composition de l'image...")
+            # Choisir le template selon le nombre de photos de la session
+            layout_templates = self._config.get("templates.layout_templates", {})
+            n = self._session.layout_count
+            template_name = layout_templates.get(n,
+                            layout_templates.get(str(n), self._template))
+
             self._composer.compose(
                 self._session.processed_photos,
-                self._template,
+                template_name,
                 self._session.final_path,
                 font_path=self._font_path,
+                title=self._config.get("event.title", ""),
+                description=self._config.get("event.description", ""),
             )
             self._session.final_photo = self._session.final_path
 
@@ -298,42 +306,40 @@ class StateMachine:
 
     def _build_admin_settings(self) -> dict:
         return {
-            'layout_a': self._available_layouts[0] if len(self._available_layouts) > 0 else 1,
-            'layout_b': self._available_layouts[-1] if len(self._available_layouts) > 1 else 4,
+            'layout_a':    self._available_layouts[0] if self._available_layouts else 1,
+            'layout_b':    self._available_layouts[-1] if len(self._available_layouts) > 1 else 4,
             'ai_enabled':    self._config.get('ai.enabled', False),
             'print_enabled': self._config.get('printing.enabled', False),
             'cloud_enabled': self._config.get('cloud.enabled', False),
             'countdown':     self._countdown_s,
-            'template':      self._template,
+            'event_title':   self._config.get('event.title', ''),
+            'event_description': self._config.get('event.description', ''),
         }
 
     def _apply_admin_settings(self, settings: dict):
         la = int(settings.get('layout_a', 1))
         lb = int(settings.get('layout_b', 4))
-        # S'assurer que les 2 options sont différentes
         if la == lb:
             lb = 4 if la != 4 else 1
         self._available_layouts = sorted({la, lb})
         self._default_layout = self._available_layouts[0]
-
         self._countdown_s = int(settings.get('countdown', 3))
-        self._template = settings.get('template', self._template)
 
-        # Mettre à jour la config en mémoire
         self._config.set('photos.available_layouts', self._available_layouts)
         self._config.set('photos.default_layout', self._default_layout)
         self._config.set('ai.enabled', bool(settings.get('ai_enabled', False)))
         self._config.set('printing.enabled', bool(settings.get('print_enabled', False)))
         self._config.set('cloud.enabled', bool(settings.get('cloud_enabled', False)))
         self._config.set('camera.countdown_seconds', self._countdown_s)
+        self._config.set('event.title', settings.get('event_title', ''))
+        self._config.set('event.description', settings.get('event_description', ''))
 
-        # Mettre à jour les modules
         self._ai._enabled = bool(settings.get('ai_enabled', False))
         self._printer._config_enabled = bool(settings.get('print_enabled', False))
         self._uploader._enabled = bool(settings.get('cloud_enabled', False))
 
-        logger.info(f"Admin: layouts={self._available_layouts} IA={settings.get('ai_enabled')} "
-                    f"print={settings.get('print_enabled')} cloud={settings.get('cloud_enabled')}")
+        logger.info(f"Admin: layouts={self._available_layouts} "
+                    f"titre='{settings.get('event_title')}'")
 
     # --- ERROR ---
 

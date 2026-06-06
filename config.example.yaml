@@ -39,9 +39,19 @@ gpio:
   flash_led_pin: 33          # BCM13 - pin physique 33
   button_bounce_time: 0.3    # Temps anti-rebond en secondes
 
+event:
+  title: "Mon Événement"
+  description: "Votre description ici"
+
 templates:
-  default: strip_classic
+  default: portrait_1photo
   templates_dir: templates
+  # Template utilisé selon le nombre de photos de la session
+  layout_templates:
+    1: portrait_1photo
+    2: portrait_1photo
+    3: portrait_1photo
+    4: landscape_4photos
 
 processing:
   jpeg_quality: 92
