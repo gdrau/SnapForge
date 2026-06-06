@@ -148,8 +148,23 @@ class Picamera2Camera:
                 )
 
             self._cam.start()
-            time.sleep(1.5)  # Chauffe capteur + AE
-            logger.info("Picamera2 initialisée")
+            time.sleep(2.0)  # Laisser le temps au pipeline ISP de stabiliser
+
+            # Vérification : une frame doit arriver dans les 2 secondes suivantes
+            # Si la caméra a eu un timeout Unicam, elle devrait s'être rétablie ici
+            try:
+                test = self._cam.capture_array()
+                h, w = test.shape[:2]
+                logger.info(f"Picamera2 initialisee et operationnelle ({w}x{h}px)")
+            except Exception as test_err:
+                logger.warning(
+                    f"ATTENTION : premiere frame non recue ({test_err})\n"
+                    "  → Verifier le cable nappe de la camera (les deux extremites)\n"
+                    "  → Tester independamment : libcamera-hello --timeout 5000"
+                )
+                # Ne pas abandonner ici — la camera peut quand meme fonctionner
+                logger.info("Picamera2 initialisee (avec avertissement cable)")
+
         except Exception as e:
             logger.error(f"Erreur init Picamera2: {e}")
             self._cam = None
