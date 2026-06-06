@@ -665,6 +665,8 @@ class PygameUI:
                     self._emit("admin_save", dict(settings))
                 elif act == "admin_cancel":
                     self._emit("admin_cancel")
+                elif act == "admin_confirm_quit":
+                    self.show_confirm_quit()   # même action que le clic souris
             elif itype == "back":
                 self._admin_go_back(settings)
             return True
@@ -891,39 +893,64 @@ class PygameUI:
         btn_area = 46  # hauteur réservée pour le bouton RETOUR ACCUEIL
 
         if self._is_portrait:
-            # Portrait : photo en haut, QR centré en dessous
-            photo_area_h = int(self._h * 0.48)
-            # En portrait : limiter le QR à ~45% de la largeur (plus compact)
-            qr_max_portrait = int(self._w * 0.45)
-            qr_size = min(self._qr_size, qr_max_portrait, self._w - 40,
-                          self._h - photo_area_h - btn_area - 60)
+            # ----------------------------------------------------------------
+            # Portrait — layout dynamique avec centrage vertical du bloc complet
+            # [ marge ] [ photo ] [ gap ] [ QR ] [ texte ] [ espace ] [ bouton ]
+            # ----------------------------------------------------------------
+            MARGIN_TOP  = 16
+            MARGIN_BOT  = 66    # espace réservé pour le bouton RETOUR ACCUEIL
+            GAP_INNER   = 14    # entre photo et QR
+            GAP_TEXT    = 8     # entre QR et texte "Scannez…"
+            TEXT_H      = 22
+            QR_MAX      = int(self._w * 0.46)   # QR ≤ 46 % de la largeur
 
+            qr_size = min(self._qr_size, QR_MAX)
+            zone_h  = self._h - MARGIN_TOP - MARGIN_BOT  # zone utile
+
+            # Hauteur max allouée à la photo
+            # (zone - QR - gaps - texte, avec un minimum de 100 px)
+            photo_max_h = max(100, zone_h - qr_size - GAP_INNER - GAP_TEXT - TEXT_H)
+            photo_max_w = self._w - 20
+
+            # Charger et redimensionner la photo
+            photo_surf, nw, nh = None, 0, 0
             if photo and Path(photo).exists():
                 try:
                     img = pygame.image.load(photo)
                     iw, ih = img.get_size()
-                    scale = min((self._w - 20) / iw, photo_area_h / ih)
+                    scale = min(photo_max_w / iw, photo_max_h / ih)
                     nw, nh = int(iw * scale), int(ih * scale)
-                    img = pygame.transform.scale(img, (nw, nh))
-                    self._screen.blit(img, ((self._w - nw) // 2, 10))
+                    photo_surf = pygame.transform.scale(img, (nw, nh))
                 except Exception:
                     pass
 
-            if qr is not None:
+            # Hauteur totale du bloc (photo + QR + texte)
+            has_qr      = qr is not None
+            block_h     = nh + (GAP_INNER + qr_size + GAP_TEXT + TEXT_H if has_qr else 0)
+
+            # Centrage vertical du bloc dans la zone utile
+            start_y = MARGIN_TOP + max(0, (zone_h - block_h) // 2)
+
+            # Afficher la photo
+            if photo_surf:
+                self._screen.blit(photo_surf, ((self._w - nw) // 2, start_y))
+
+            # Afficher le QR juste sous la photo
+            qr_y = start_y + nh + GAP_INNER
+            if has_qr:
                 try:
-                    pil = qr.convert("RGB")
+                    pil   = qr.convert("RGB")
                     qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
                     qsurf = pygame.transform.scale(qsurf, (qr_size, qr_size))
-                    qx = (self._w - qr_size) // 2
-                    qy = photo_area_h + 15
-                    self._screen.blit(qsurf, (qx, qy))
+                    qx    = (self._w - qr_size) // 2
+                    self._screen.blit(qsurf, (qx, qr_y))
                     self._txt("Scannez pour telecharger", "xs", _LGRAY,
-                               self._w // 2, qy + qr_size + 10, cx=True)
+                              self._w // 2, qr_y + qr_size + GAP_TEXT, cx=True)
                 except Exception as e:
                     logger.error(f"QR: {e}")
             else:
                 self._txt("Photo enregistree !", "md", _LGRAY,
-                           self._w // 2, photo_area_h + 80, cx=True)
+                          self._w // 2, qr_y + 40, cx=True)
 
         else:
             # Paysage : photo à gauche, QR à droite
