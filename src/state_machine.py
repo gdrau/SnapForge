@@ -221,7 +221,14 @@ class StateMachine:
                 out = self._ai.process(self._session.final_path, self._session.final_path)
                 self._session.final_photo = out
 
-            self._go(State.REVIEW)
+            if self._printer.enabled:
+                # Avec imprimante : REVIEW pour que l'utilisateur choisisse d'imprimer ou non
+                self._go(State.REVIEW)
+            else:
+                # Sans imprimante : affichage direct du résultat + QR, upload en arrière-plan
+                threading.Thread(target=self._do_upload, daemon=True).start()
+                self._go(State.QR_DISPLAY)
+
         except Exception as e:
             logger.exception("Erreur traitement")
             self._session.error = str(e)

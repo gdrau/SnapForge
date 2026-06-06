@@ -232,6 +232,7 @@ class PygameUI:
 
     def show_countdown(self, value: int):
         self._info["countdown"] = value
+        self._buttons = []   # Masque CAPTURER pendant toute la séquence
 
     def show_capture_result(self, path: str, remaining: int):
         self._info["last_photo"] = path
@@ -442,7 +443,6 @@ class PygameUI:
         for i in range(3):
             c = _ACCENT if i == t else _GRAY
             pygame.draw.circle(self._screen, c, (self._w // 2 - 20 + i * 20, self._h * 3 // 4 - 60), 7)
-        self._draw_btn_hint(1, self._w // 2, self._h - 50, centered=True)
         self._text("ESC = menu admin", "xs", _DISABLED, self._w - 10, self._h - 14,
                    center=False, align_right=True)
 
@@ -451,14 +451,6 @@ class PygameUI:
     def _r_choose(self):
         self._screen.fill(_DARK)
         self._text("Combien de photos ?", "lg", _WHITE, self._w // 2, 48, center=True)
-
-        # Indicateurs boutons sous chaque option
-        btns = [b for b in self._buttons if b.action == "start_session" and isinstance(b.data, int)]
-        for i, btn in enumerate(btns):
-            num = i + 1
-            cx = btn.rect.centerx
-            by = btn.rect.bottom + 14
-            self._draw_btn_hint(num, cx, by, centered=True)
 
         self._text("ESC = menu admin", "xs", _DISABLED, self._w - 10, self._h - 12,
                    center=False, align_right=True)
@@ -489,8 +481,6 @@ class PygameUI:
         if cd > 0:
             self._shadow_text(str(cd), "xxl", _WHITE,
                               self._w // 2, self._h // 2, center=True)
-        else:
-            self._draw_btn_hint(1, self._w // 2, self._h - 20, centered=True)
 
         self._text("ESC = admin", "xs", _DISABLED, self._w - 10, self._h - 14,
                    center=False, align_right=True)
@@ -531,13 +521,6 @@ class PygameUI:
         if status:
             self._text(status, "sm", _ACCENT, self._w // 2, self._h - 90, center=True)
 
-        # Indicateurs boutons
-        action_btns = [b for b in self._buttons if b.action in ("confirm_print", "skip_print")]
-        if len(action_btns) == 2:
-            self._draw_btn_hint(1, action_btns[0].rect.centerx, self._h - 14, centered=True)
-            self._draw_btn_hint(2, action_btns[1].rect.centerx, self._h - 14, centered=True)
-        elif len(action_btns) == 1:
-            self._draw_btn_hint(1, action_btns[0].rect.centerx, self._h - 14, centered=True)
 
     # --- UPLOADING ---
 
@@ -579,7 +562,6 @@ class PygameUI:
         else:
             self._text("Pas de QR code", "sm", _GRAY, self._w * 3 // 4, self._h // 2, center=True)
 
-        self._draw_btn_hint(1, self._w // 2, self._h - 14, centered=True)
 
     # --- ERROR ---
 
@@ -635,20 +617,6 @@ class PygameUI:
     # ------------------------------------------------------------------
     # Helpers rendu texte + indicateurs boutons
     # ------------------------------------------------------------------
-
-    def _draw_btn_hint(self, num: int, x: int, y: int, centered=False):
-        """Affiche un petit badge 'BTN 1' ou 'BTN 2' pour guider l'utilisateur."""
-        label = f"BTN {num}"
-        color = _ACCENT if num == 1 else _BLUE
-        font = self._fonts["xs"]
-        tw, th = font.size(label)
-        pad = 6
-        w, h = tw + pad * 2, th + pad
-        rx = (x - w // 2) if centered else x
-        ry = y - h // 2
-        pygame.draw.rect(self._screen, color, (rx, ry, w, h), border_radius=4)
-        surf = font.render(label, True, _WHITE)
-        self._screen.blit(surf, (rx + pad, ry + pad // 2))
 
     def _text(self, text: str, size: str, color, x: int, y: int,
               center=False, align_right=False):
