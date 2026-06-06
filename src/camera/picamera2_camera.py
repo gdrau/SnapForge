@@ -212,36 +212,21 @@ class Picamera2Camera:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         cw = self._config.get("camera.resolution_width", 3280)
         ch = self._config.get("camera.resolution_height", 2464)
-        pw = self._config.get("camera.preview_width", 800)
-        ph = self._config.get("camera.preview_height", 480)
 
         try:
-            # Capture haute résolution (sans flux RAW pour éviter la surcharge Unicam)
-            self._cam.stop()
+            # switch_mode_and_capture_file gère le mode switching en interne.
+            # Le preview loop étant arrêté, il n'y a plus de race condition.
             still_cfg = self._cam.create_still_configuration(
                 main={"size": (cw, ch), "format": "RGB888"},
             )
-            # Supprimer le flux RAW si Picamera2 l'a ajouté automatiquement
-            still_cfg.pop("raw", None)
-            self._cam.configure(still_cfg)
-            self._cam.start()
-            self._cam.capture_file(output_path)
-            self._cam.stop()
-
-            # Revenir en mode preview sans flux RAW
-            preview_cfg = self._cam.create_preview_configuration(
-                main={"size": (pw, ph), "format": "RGB888"},
-            )
-            preview_cfg.pop("raw", None)
-            self._cam.configure(preview_cfg)
-            self._cam.start()
+            self._cam.switch_mode_and_capture_file(still_cfg, output_path)
 
         except Exception as e:
             logger.error(f"Erreur capture : {e}")
             raise
 
         finally:
-            # Toujours redémarrer la boucle preview si elle tournait avant la capture
+            # Toujours redémarrer la boucle preview (même en cas d'erreur)
             if was_running and self._callback:
                 self._running = True
                 self._thread = threading.Thread(target=self._loop, daemon=True)
