@@ -11,6 +11,7 @@ build/
 
 # Configuration locale (contient potentiellement des secrets)
 config.yaml
+config.yaml.bak
 
 # Photos et logs générés (dossier unique : Photo/)
 Photo/
