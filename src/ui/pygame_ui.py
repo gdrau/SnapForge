@@ -184,9 +184,14 @@ class PygameUI:
         self._info = {"booth_name": booth_name}
         with self._preview_lock:
             self._preview_frame = None
+        # Police et position du bouton adaptées à la largeur de l'écran
+        txt  = "APPUYEZ POUR COMMENCER"
+        font_key = "md" if self._is_portrait else "lg"
+        px   = 20   if self._is_portrait else 50
+        cy   = self._h - 60 if self._is_portrait else self._h - 80
         self._buttons = [
-            self._btn_auto("APPUYEZ POUR COMMENCER", _ACCENT,
-                           self._w // 2, self._h - 80, font="lg", px=50, py=22,
+            self._btn_auto(txt, _ACCENT, self._w // 2, cy,
+                           font=font_key, px=px, py=22,
                            action="open_choose_format")
         ]
 
@@ -824,9 +829,12 @@ class PygameUI:
 
     def _r_choose(self):
         self._screen.fill(_DARK)
-        self._txt("Combien de photos ?", "lg", _WHITE, self._w // 2, 48, cx=True)
-        self._txt("Appuyez sur votre choix pour commencer", "sm", _GRAY,
-                  self._w // 2, self._h - 28, cx=True)
+        # Police du titre auto-ajustée pour ne jamais dépasser la largeur de l'écran
+        self._txt_fit("Combien de photos ?", _WHITE, self._w // 2, 48,
+                      max_w=self._w - 20, cx=True)
+        hint = "Appuyez pour commencer" if self._is_portrait else "Appuyez sur votre choix pour commencer"
+        self._txt_fit(hint, _GRAY, self._w // 2, self._h - 28,
+                      max_w=self._w - 20, cx=True)
 
     def _r_preview(self):
         with self._preview_lock:
@@ -885,7 +893,10 @@ class PygameUI:
         if self._is_portrait:
             # Portrait : photo en haut, QR centré en dessous
             photo_area_h = int(self._h * 0.48)
-            qr_size = min(self._qr_size, self._w - 40, self._h - photo_area_h - btn_area - 60)
+            # En portrait : limiter le QR à ~45% de la largeur (plus compact)
+            qr_max_portrait = int(self._w * 0.45)
+            qr_size = min(self._qr_size, qr_max_portrait, self._w - 40,
+                          self._h - photo_area_h - btn_area - 60)
 
             if photo and Path(photo).exists():
                 try:
@@ -1133,6 +1144,20 @@ class PygameUI:
     # ------------------------------------------------------------------
     # Helpers texte
     # ------------------------------------------------------------------
+
+    def _txt_fit(self, text: str, color, x: int, y: int,
+                 max_w: int = 0, cx: bool = False):
+        """
+        Affiche un texte en choisissant automatiquement la plus grande police
+        qui tient dans max_w (défaut = self._w - 20).
+        Utilisez cette méthode pour tous les titres d'écran afin de supporter
+        les deux orientations sans overflow.
+        """
+        max_w = max_w or (self._w - 20)
+        font = self._best_font_for(str(text), max_w, pad=0)
+        surf = font.render(str(text), True, color)
+        rect = surf.get_rect(center=(x, y)) if cx else surf.get_rect(topleft=(x, y))
+        self._screen.blit(surf, rect)
 
     def _txt(self, text, size, color, x, y, cx=False, ra=False):
         font = self._fonts.get(size, self._fonts["sm"])
