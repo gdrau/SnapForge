@@ -132,10 +132,15 @@ class Picamera2Camera:
             pw = self._config.get("camera.preview_width", 800)
             ph = self._config.get("camera.preview_height", 480)
 
-            # Preview SANS flux RAW : évite la surcharge du bus Unicam (cause du timeout)
-            # Le flux RAW n'est utilisé qu'au moment de la capture (switch_mode_and_capture_file)
+            cw = self._config.get("camera.resolution_width", 3280)
+            ch = self._config.get("camera.resolution_height", 2464)
+
+            # Config preview avec flux RAW à la résolution native du capteur.
+            # Cette config est celle qui fonctionnait avant : l'AE/AWB utilise le
+            # flux RAW pour calculer l'exposition correcte en preview.
             cfg = self._cam.create_preview_configuration(
                 main={"size": (pw, ph), "format": "RGB888"},
+                raw={"size": (cw, ch)},
             )
             self._cam.configure(cfg)
 
