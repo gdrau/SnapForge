@@ -197,11 +197,20 @@ class StateMachine:
 
             self._ui.show_processing("Composition de l'image...")
 
-            # Template selon le nombre de photos de la session
+            # Template selon le nombre de photos — compatibilité ancienne et nouvelle config
             n = self._session.layout_count
-            template_name = self._config.get(f"templates.photo_{n}",
-                            self._config.get("templates.default", "portrait_1photo"))
-            logger.info(f"Template selectionne pour {n} photo(s) : '{template_name}'")
+            template_name = self._config.get(f"templates.photo_{n}")
+            if not template_name:
+                # Ancienne structure : templates.layout_templates.N
+                lt = self._config.get("templates.layout_templates", {})
+                template_name = lt.get(n, lt.get(str(n)))
+            if not template_name:
+                # Valeur par défaut robuste (jamais strip_classic)
+                default = self._config.get("templates.default", "")
+                template_name = default if default not in ("strip_classic", "strip_4photos", "") \
+                                else ("landscape_4photos" if n == 4 else "portrait_1photo")
+            logger.info(f"Template selectionne pour {n} photo(s) : '{template_name}' "
+                        f"(config keys tries: templates.photo_{n}, templates.layout_templates.{n}, templates.default)")
 
             self._composer.compose(
                 self._session.processed_photos,

@@ -29,6 +29,8 @@ BTN_H = 52       # hauteur du bouton Sauvegarder/Annuler
 
 
 class _Btn:
+    fixed = False   # True = position absolue, non affectée par le scroll admin
+
     def __init__(self, rect, text, color, text_color=_WHITE, font=None,
                  action=None, data=None, radius=10):
         self.rect = pygame.Rect(rect)
@@ -55,6 +57,32 @@ class _Btn:
             if self.rect.collidepoint(event.pos):
                 return (self.action, self.data)
         return None
+
+
+class _NavBtn(_Btn):
+    """
+    Bouton de navigation admin avec titre + description.
+    Se dessine lui-même (évite que le fond ne recouvre le texte).
+    """
+    def __init__(self, rect, label, desc, font_label, font_desc, action, data):
+        super().__init__(rect, "", _DARK2, action=action, data=data, radius=8)
+        self._label = label
+        self._desc  = desc
+        self._fl    = font_label
+        self._fd    = font_desc
+
+    def draw(self, surf):
+        c = (55, 62, 72) if self._hover else _DARK2
+        pygame.draw.rect(surf, c, self.rect, border_radius=8)
+        cy = self.rect.centery
+        if self._label:
+            ts = self._fl.render(self._label, True, _WHITE)
+            surf.blit(ts, (self.rect.x + 14, cy - ts.get_height() - 1))
+        if self._desc:
+            ds = self._fd.render(self._desc, True, _GRAY)
+            surf.blit(ds, (self.rect.x + 14, cy + 4))
+        arrow = self._fl.render(">", True, _GRAY)
+        surf.blit(arrow, arrow.get_rect(right=self.rect.right - 14, centery=cy))
 
 
 class PygameUI:
@@ -331,7 +359,7 @@ class PygameUI:
         val_x = margin + panel_w - val_w
 
         btns: List[_Btn] = []
-        y = HDR_H + 8  # les boutons ont des positions absolues; le rendu translate par scroll
+        y = HDR_H + 8
 
         for item in items:
             itype = item.get("type")
@@ -341,14 +369,16 @@ class PygameUI:
                 continue
 
             if itype in ("back", "gpio_info"):
-                # Pas de bouton pour ces types (rendu spécial)
                 y += ROW_H
                 continue
 
             if itype == "nav":
-                btns.append(_Btn(
-                    (margin, y, panel_w, ROW_H - 4), "", _DARK2,
-                    action="admin_nav", data=item["target"], radius=8,
+                # _NavBtn dessine lui-même le fond ET le texte — pas d'overdraw
+                btns.append(_NavBtn(
+                    (margin, y, panel_w, ROW_H - 4),
+                    item["label"], item.get("desc", ""),
+                    self._fonts["sm"], self._fonts["xs"],
+                    "admin_nav", item["target"],
                 ))
                 y += ROW_H
                 continue
@@ -392,8 +422,17 @@ class PygameUI:
 
             y += ROW_H
 
+        # Bouton ← Retour fixe en bas pour les sous-pages (non scrollé)
+        if self._admin_page != "main":
+            back = _Btn(
+                (margin, self._h - BTN_H + 2, 170, BTN_H - 12),
+                "<  Retour", _PANEL,
+                font=self._fonts["sm"], action="admin_back_btn", radius=8,
+            )
+            back.fixed = True
+            btns.append(back)
+
         self._buttons = btns
-        self._info["_btn_base_y"] = HDR_H + 8
 
     def _admin_max_scroll(self) -> int:
         """Calcule le scroll maximum pour ne pas dépasser le contenu."""
@@ -431,12 +470,12 @@ class PygameUI:
                     self._admin_scroll = max(0, min(self._admin_scroll + delta, max_s))
                     continue
 
-                # Translate les clics pour l'admin (scroll)
-                pos = event.pos if hasattr(event, "pos") else None
+                # Admin : séparer boutons fixes (pos absolue) et scrollables
+                pos = getattr(event, "pos", None)
                 if pos and self._screen_name == "admin":
                     translated = (pos[0], pos[1] + self._admin_scroll)
                     fake = pygame.event.Event(event.type, {**event.__dict__, "pos": translated})
-                    self._handle_buttons(fake)
+                    self._handle_buttons(event, fake)   # event=original pour fixed, fake pour scrollé
                 else:
                     self._handle_buttons(event)
 
@@ -444,9 +483,15 @@ class PygameUI:
             self._clock.tick(self._fps)
         pygame.quit()
 
-    def _handle_buttons(self, event):
+    def _handle_buttons(self, event, scrolled_event=None):
+        """
+        scrolled_event : événement avec position translatee par scroll (admin uniquement).
+        Les boutons fixes (back, save, cancel) utilisent event (position absolue).
+        Les autres utilisent scrolled_event.
+        """
         for btn in list(self._buttons):
-            r = btn.handle(event)
+            ev = event if btn.fixed else (scrolled_event or event)
+            r = btn.handle(ev)
             if not r:
                 continue
             action, data = r
@@ -459,6 +504,16 @@ class PygameUI:
                 self._admin_scroll = self._admin_scroll_cache.get(data, 0)
                 self._text_editing = None
                 self._build_admin(settings)
+
+            elif action == "admin_back_btn":
+                if self._admin_stack:
+                    prev = self._admin_stack.pop()
+                    self._admin_scroll_cache[self._admin_page] = self._admin_scroll
+                    self._admin_page = prev
+                    self._admin_scroll = self._admin_scroll_cache.get(prev, 0)
+                    self._build_admin(settings)
+                else:
+                    self._emit("admin_cancel")
 
             elif action == "admin_cycle":
                 key, val = data["key"], data["value"]
@@ -548,15 +603,18 @@ class PygameUI:
         }
         dispatch.get(self._screen_name, lambda: self._screen.fill(_DARK))()
         for btn in self._buttons:
-            # Pour l'admin : translate les boutons selon le scroll
             if self._screen_name == "admin":
-                real_rect = btn.rect.move(0, -self._admin_scroll)
-                if real_rect.bottom < HDR_H or real_rect.top > self._h:
-                    continue
-                orig = btn.rect
-                btn.rect = real_rect
-                btn.draw(self._screen)
-                btn.rect = orig
+                if btn.fixed:
+                    # Bouton à position fixe (ex: Retour) — dessiné tel quel, pas de clip
+                    btn.draw(self._screen)
+                else:
+                    real_rect = btn.rect.move(0, -self._admin_scroll)
+                    if real_rect.bottom <= HDR_H or real_rect.top >= self._h:
+                        continue
+                    orig = btn.rect
+                    btn.rect = real_rect
+                    btn.draw(self._screen)
+                    btn.rect = orig
             else:
                 btn.draw(self._screen)
         pygame.display.flip()
@@ -706,33 +764,24 @@ class PygameUI:
             cy = y + ROW_H // 2
 
             if itype == "nav":
-                pygame.draw.rect(self._screen, _DARK2,
-                                 (margin, y, panel_w, ROW_H - 4), border_radius=8)
-                self._txt(item["label"], "sm", _WHITE, margin + 12, cy - 10)
-                self._txt(item.get("desc", ""), "xs", _GRAY, margin + 12, cy + 10)
-                self._txt("→", "sm", _LGRAY, self._w - margin - 10, cy, cx=False, ra=True)
+                # _NavBtn gère son propre rendu — rien à faire ici
                 y += ROW_H
                 continue
 
-            if itype == "action":
-                # Rendu par _Btn, juste passer
+            if itype in ("action", "back"):
+                # Géré par _Btn/_FixedBtn
                 y += ROW_H
                 continue
 
             if itype in ("cycle", "toggle"):
-                key = item["key"]
-                self._txt(item["label"], "xs", _LGRAY, margin, cy - 1)
-                if i := next((k for k, itm in enumerate(items) if itm is item), None):
-                    pass
-                # Valeur affichée par le bouton
+                self._txt(item.get("label", ""), "xs", _LGRAY, margin, cy - 1)
                 y += ROW_H
                 continue
 
             if itype == "text":
                 key = item["key"]
                 is_active = self._text_editing == key
-                self._txt(item["label"], "xs", _LGRAY, margin, cy - 1)
-                # Champ texte
+                self._txt(item.get("label", ""), "xs", _LGRAY, margin, cy - 1)
                 fx, fy = val_x, y + (ROW_H - 36) // 2
                 fw, fh = val_w, 36
                 pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
@@ -746,15 +795,6 @@ class PygameUI:
                     display += "|"
                 ts = font.render(display, True, _WHITE)
                 self._screen.blit(ts, (fx + 8, fy + (fh - ts.get_height()) // 2))
-                y += ROW_H
-                continue
-
-            if itype == "back":
-                by2 = y + 4
-                if HDR_H <= by2 + ROW_H - 8 <= self._h:
-                    pygame.draw.rect(self._screen, _PANEL,
-                                     (margin, by2, 160, ROW_H - 8), border_radius=8)
-                    self._txt("← Retour", "sm", _LGRAY, margin + 80, by2 + (ROW_H - 8) // 2, cx=True)
                 y += ROW_H
                 continue
 
@@ -788,16 +828,7 @@ class PygameUI:
         if hint:
             self._txt(hint, "xs", _ACCENT, self._w - 10, HDR_H // 2, ra=True)
 
-        # "Retour" clickable en bas (hors zone scrollable) — uniquement si la page n'est pas "main"
-        if self._admin_page != "main":
-            by3 = self._h - BTN_H - 4
-            pygame.draw.rect(self._screen, _DARK2, (margin, by3, 180, BTN_H - 8), border_radius=8)
-            self._txt("← Retour", "sm", _LGRAY, margin + 90, by3 + (BTN_H - 8) // 2, cx=True)
-            # Bouton "retour" cliquable — on le dessine séparément via overlay
-            if pygame.mouse.get_pressed()[0]:
-                mx, my = pygame.mouse.get_pos()
-                if margin <= mx <= margin + 180 and by3 <= my <= by3 + BTN_H - 8:
-                    pass  # géré via _handle_buttons
+        # Le bouton ← Retour est géré par _FixedBtn dans _rebuild_admin_buttons
 
     def _r_admin_gpio_rows(self, start_y: int, settings: dict):
         """Affiche les infos GPIO dans la page diagnostic."""
