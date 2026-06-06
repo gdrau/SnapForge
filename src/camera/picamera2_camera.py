@@ -46,13 +46,19 @@ class MockCamera:
         h = self._config.get("camera.preview_height", 480)
         frame_count = 0
         while self._running:
-            frame = np.zeros((h, w, 3), dtype=np.uint8)
-            t = frame_count % 256
-            frame[:, :, 0] = t
-            frame[:, :, 1] = 100
-            frame[:, :, 2] = 255 - t
-            # Texte simulé
-            frame[h // 2 - 2 : h // 2 + 2, w // 3 : w * 2 // 3] = 255
+            # Preview simulé : fond gris avec texte "MODE PC - PAS DE CAMERA"
+            frame = np.full((h, w, 3), 45, dtype=np.uint8)          # fond gris sombre
+            # Bande centrale plus claire pour indiquer la zone photo
+            frame[h//4:h*3//4, w//6:w*5//6] = 70
+            # Bordure blanche de la zone photo
+            frame[h//4:h//4+3, w//6:w*5//6] = 200
+            frame[h*3//4-3:h*3//4, w//6:w*5//6] = 200
+            frame[h//4:h*3//4, w//6:w//6+3] = 200
+            frame[h//4:h*3//4, w*5//6-3:w*5//6] = 200
+            # Animation simple (barre qui se déplace)
+            bar_x = int((frame_count * 4) % (w * 5 // 3 - w // 6)) + w // 6
+            bar_x = min(bar_x, w * 5 // 6)
+            frame[h//2 - 1:h//2 + 1, max(w//6, bar_x - 20):min(w*5//6, bar_x)] = 180
             if self._callback:
                 self._callback(frame)
             time.sleep(1 / 30)
@@ -64,26 +70,42 @@ class MockCamera:
             self._thread.join(timeout=1.0)
 
     def capture(self, output_path: str) -> str:
+        """Génère une photo simulée clairement identifiable comme placeholder."""
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         w = self._config.get("camera.resolution_width", 3280)
         h = self._config.get("camera.resolution_height", 2464)
         if _PIL_AVAILABLE:
-            import random
-            img = Image.new("RGB", (w, h), (140, 160, 200))
+            # Photo gris neutre avec encadré et texte — ressemble à une photo manquante
+            img = Image.new("RGB", (w, h), (80, 80, 80))
             draw = ImageDraw.Draw(img)
-            for _ in range(15):
-                x, y = random.randint(0, w), random.randint(0, h)
-                r = random.randint(20, 180)
-                c = (random.randint(100, 255), random.randint(80, 200), random.randint(80, 200))
-                draw.ellipse([x - r, y - r, x + r, y + r], fill=c)
-            draw.text((w // 2 - 100, h // 2), "PHOTO SIMULÉE", fill=(255, 255, 255))
+            # Rectangle central blanc simulant un sujet
+            mx, my = w // 2, h // 2
+            rw, rh = int(w * 0.35), int(h * 0.55)
+            draw.rectangle([mx - rw, my - rh, mx + rw, my + rh], fill=(200, 200, 200), outline=(255, 255, 255), width=8)
+            # Cercle "tête" simulé
+            draw.ellipse([mx - rw // 3, my - rh + 60, mx + rw // 3, my - rh + 60 + rw * 2 // 3],
+                         fill=(220, 220, 220), outline=(255, 255, 255), width=6)
+            # Texte d'identification
+            font_size = max(w // 25, 40)
+            try:
+                from PIL import ImageFont
+                for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                             "C:/Windows/Fonts/arial.ttf"):
+                    if Path(path).exists():
+                        font = ImageFont.truetype(path, font_size)
+                        break
+                else:
+                    font = ImageFont.load_default()
+            except Exception:
+                font = None
+            label = "PHOTO SIMULEE - MODE PC"
+            draw.text((mx, my + rh + 60), label, fill=(255, 255, 255), font=font, anchor="mm" if font else None)
             quality = self._config.get("processing.jpeg_quality", 92)
             img.save(output_path, quality=quality)
         else:
-            # Fallback brut sans PIL
             with open(output_path, "wb") as f:
                 f.write(b"")
-        logger.info(f"MockCamera: capture -> {output_path}")
+        logger.info(f"MockCamera: capture simulee -> {output_path}")
         return output_path
 
     def close(self):
