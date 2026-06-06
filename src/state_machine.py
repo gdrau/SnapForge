@@ -452,6 +452,11 @@ class StateMachine:
             self._cancel_timer()
             self._go(State.IDLE)
 
+        elif action == "quit_app":
+            logger.info("Fermeture propre demandee depuis le menu admin")
+            self.stop()
+            self._ui.stop()
+
     # ------------------------------------------------------------------
 
     def _start_session(self, layout_count: int):

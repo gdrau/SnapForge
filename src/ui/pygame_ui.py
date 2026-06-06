@@ -122,12 +122,17 @@ class PygameUI:
         self._admin_stack: List[str] = []
         self._admin_scroll = 0
         self._admin_scroll_cache: dict = {}
-        self._admin_selection: int = 0          # index item sélectionné (clavier)
-        self._admin_selection_cache: dict = {}  # sélection par page
+        self._admin_selection: int = 0
+        self._admin_selection_cache: dict = {}
         self._text_editing: Optional[str] = None
 
         self._fonts: dict = {}
         self._init_pygame()
+
+    @property
+    def _is_portrait(self) -> bool:
+        """True si l'écran est en mode portrait (h > w, ex: 480×800)."""
+        return self._h > self._w
 
     # ------------------------------------------------------------------
     # Init
@@ -195,18 +200,38 @@ class PygameUI:
 
     def _rebuild_format_buttons(self, layouts, selected):
         n = len(layouts)
-        margin, gap = 40, 30
-        btn_w = (self._w - 2 * margin - gap * (n - 1)) // n
-        btn_h = int(self._h * 0.55)
-        y = self._h // 2 - btn_h // 2 - 20
         longest = max((f"{v} PHOTO{'S' if v > 1 else ''}" for v in layouts), key=len)
-        font = self._best_font_for(longest, btn_w)
         btns = []
-        for i, v in enumerate(layouts):
-            x = margin + i * (btn_w + gap)
-            c = _ACCENT if v == selected else _BLUE
-            btns.append(_Btn((x, y, btn_w, btn_h), f"{v} PHOTO{'S' if v > 1 else ''}",
-                             c, font=font, action="start_session", data=v, radius=20))
+
+        if self._is_portrait:
+            # Portrait : boutons empilés verticalement
+            btn_w = int(self._w * 0.78)
+            btn_h = int(self._h * 0.20)
+            gap_v = int(self._h * 0.03)
+            total_h = n * btn_h + (n - 1) * gap_v
+            y_start = self._h // 2 - total_h // 2
+            font = self._best_font_for(longest, btn_w)
+            for i, v in enumerate(layouts):
+                x = (self._w - btn_w) // 2
+                y = y_start + i * (btn_h + gap_v)
+                c = _ACCENT if v == selected else _BLUE
+                btns.append(_Btn((x, y, btn_w, btn_h),
+                                 f"{v} PHOTO{'S' if v > 1 else ''}",
+                                 c, font=font, action="start_session", data=v, radius=20))
+        else:
+            # Paysage : boutons côte à côte
+            margin, gap = 40, 30
+            btn_w = (self._w - 2 * margin - gap * (n - 1)) // n
+            btn_h = int(self._h * 0.55)
+            y = self._h // 2 - btn_h // 2 - 20
+            font = self._best_font_for(longest, btn_w)
+            for i, v in enumerate(layouts):
+                x = margin + i * (btn_w + gap)
+                c = _ACCENT if v == selected else _BLUE
+                btns.append(_Btn((x, y, btn_w, btn_h),
+                                 f"{v} PHOTO{'S' if v > 1 else ''}",
+                                 c, font=font, action="start_session", data=v, radius=20))
+
         self._buttons = btns
 
     def _best_font_for(self, text, max_w, pad=40):
@@ -277,6 +302,21 @@ class PygameUI:
         self._buttons = []
         self._info = {"msg": str(message)}
 
+    def show_confirm_quit(self):
+        """Affiche la boîte de dialogue de confirmation de fermeture."""
+        self._screen_name = "confirm_quit"
+        box_w = min(400, self._w - 40)
+        bx = (self._w - box_w) // 2
+        box_y = self._h // 2 - 80
+        half = (box_w - 10) // 2
+        self._buttons = [
+            _Btn((bx, box_y + 110, half, 52), "Oui, quitter", _RED,
+                 font=self._fonts["sm"], action="quit_app", radius=8),
+            _Btn((bx + half + 10, box_y + 110, half, 52), "Annuler", _GRAY,
+                 font=self._fonts["sm"], action="cancel_quit", radius=8),
+        ]
+        self._info = {}
+
     # ------------------------------------------------------------------
     # Admin
     # ------------------------------------------------------------------
@@ -318,8 +358,9 @@ class PygameUI:
                 {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
                  "desc": "Boutons · LEDs · Journal"},
                 {"type": "sep"},
-                {"type": "action", "label": "Sauvegarder et quitter", "action": "admin_save",  "color": _GREEN},
-                {"type": "action", "label": "Quitter sans sauvegarder", "action": "admin_cancel", "color": _GRAY},
+                {"type": "action", "label": "Sauvegarder et quitter",  "action": "admin_save",         "color": _GREEN},
+                {"type": "action", "label": "Retour à l'accueil",       "action": "admin_cancel",       "color": _GRAY},
+                {"type": "action", "label": "Quitter l'application",    "action": "admin_confirm_quit", "color": _RED},
             ]
 
         if page == "plugins":
@@ -369,7 +410,8 @@ class PygameUI:
         """Construit la liste de boutons pour les items de la page."""
         margin = 28
         panel_w = self._w - 2 * margin
-        val_w = 200
+        # En portrait (écran étroit) on réduit la zone valeur pour laisser plus d'espace au label
+        val_w = 150 if self._is_portrait else 200
         val_x = margin + panel_w - val_w
 
         btns: List[_Btn] = []
@@ -530,6 +572,18 @@ class PygameUI:
 
             elif action == "admin_cancel":
                 self._emit("admin_cancel")
+
+            elif action == "admin_confirm_quit":
+                # Affiche la boîte de confirmation sans quitter immédiatement
+                self.show_confirm_quit()
+
+            elif action == "quit_app":
+                self._emit("quit_app")
+
+            elif action == "cancel_quit":
+                # Retour au menu admin
+                self._screen_name = "admin"
+                self._build_admin(settings)
 
             else:
                 self._emit(action, data)
@@ -709,7 +763,13 @@ class PygameUI:
 
     def _on_key(self, event):
         if event.key == pygame.K_ESCAPE:
-            self._emit("open_admin")
+            if self._screen_name == "confirm_quit":
+                # ESC annule la confirmation de fermeture
+                settings = self._info.get("settings", {})
+                self._screen_name = "admin"
+                self._build_admin(settings)
+            else:
+                self._emit("open_admin")
         elif event.key == pygame.K_SPACE:
             if self._screen_name == "idle":
                 self._emit("open_choose_format")
@@ -730,6 +790,7 @@ class PygameUI:
             "qr":            self._r_qr,
             "error":         self._r_error,
             "admin":         self._r_admin,
+            "confirm_quit":  self._r_confirm_quit,
         }
         dispatch.get(self._screen_name, lambda: self._screen.fill(_DARK))()
         for btn in self._buttons:
@@ -818,43 +879,90 @@ class PygameUI:
     def _r_qr(self):
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
-        btn_area = 46   # hauteur réservée au bouton RETOUR ACCUEIL (petit bouton xs)
-        if photo and Path(photo).exists():
-            try:
-                img = pygame.image.load(photo)
-                iw, ih = img.get_size()
-                # Laisser btn_area pixels libres en bas pour le bouton
-                available_h = self._h - btn_area - 20
-                scale = min((self._w // 2 - 30) / iw, available_h / ih)
-                nw, nh = int(iw * scale), int(ih * scale)
-                img = pygame.transform.scale(img, (nw, nh))
-                # Centrer verticalement dans la zone disponible (hors bouton)
-                img_y = (available_h - nh) // 2 + 10
-                self._screen.blit(img, (15, img_y))
-            except Exception:
-                pass
-        qr = self._info.get("qr")
-        if qr is not None:
-            try:
-                pil = qr.convert("RGB")
-                qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
-                sz = self._qr_size
-                qsurf = pygame.transform.scale(qsurf, (sz, sz))
-                qx = self._w - sz - 15
-                qy = (self._h - sz) // 2 - 20
-                self._screen.blit(qsurf, (qx, qy))
-                self._txt("Scannez pour", "xs", _LGRAY, qx + sz // 2, qy + sz + 8, cx=True)
-                self._txt("telecharger", "xs", _LGRAY, qx + sz // 2, qy + sz + 24, cx=True)
-            except Exception as e:
-                logger.error(f"QR: {e}")
+        qr    = self._info.get("qr")
+        btn_area = 46  # hauteur réservée pour le bouton RETOUR ACCUEIL
+
+        if self._is_portrait:
+            # Portrait : photo en haut, QR centré en dessous
+            photo_area_h = int(self._h * 0.48)
+            qr_size = min(self._qr_size, self._w - 40, self._h - photo_area_h - btn_area - 60)
+
+            if photo and Path(photo).exists():
+                try:
+                    img = pygame.image.load(photo)
+                    iw, ih = img.get_size()
+                    scale = min((self._w - 20) / iw, photo_area_h / ih)
+                    nw, nh = int(iw * scale), int(ih * scale)
+                    img = pygame.transform.scale(img, (nw, nh))
+                    self._screen.blit(img, ((self._w - nw) // 2, 10))
+                except Exception:
+                    pass
+
+            if qr is not None:
+                try:
+                    pil = qr.convert("RGB")
+                    qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
+                    qsurf = pygame.transform.scale(qsurf, (qr_size, qr_size))
+                    qx = (self._w - qr_size) // 2
+                    qy = photo_area_h + 15
+                    self._screen.blit(qsurf, (qx, qy))
+                    self._txt("Scannez pour telecharger", "xs", _LGRAY,
+                               self._w // 2, qy + qr_size + 10, cx=True)
+                except Exception as e:
+                    logger.error(f"QR: {e}")
+            else:
+                self._txt("Photo enregistree !", "md", _LGRAY,
+                           self._w // 2, photo_area_h + 80, cx=True)
+
         else:
-            self._txt("Photo enregistree !", "md", _LGRAY, self._w * 3 // 4, self._h // 2, cx=True)
+            # Paysage : photo à gauche, QR à droite
+            available_h = self._h - btn_area - 20
+            if photo and Path(photo).exists():
+                try:
+                    img = pygame.image.load(photo)
+                    iw, ih = img.get_size()
+                    scale = min((self._w // 2 - 30) / iw, available_h / ih)
+                    nw, nh = int(iw * scale), int(ih * scale)
+                    img = pygame.transform.scale(img, (nw, nh))
+                    self._screen.blit(img, (15, (available_h - nh) // 2 + 10))
+                except Exception:
+                    pass
+
+            if qr is not None:
+                try:
+                    pil = qr.convert("RGB")
+                    qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
+                    sz = self._qr_size
+                    qsurf = pygame.transform.scale(qsurf, (sz, sz))
+                    qx = self._w - sz - 15
+                    qy = (self._h - sz) // 2 - 20
+                    self._screen.blit(qsurf, (qx, qy))
+                    self._txt("Scannez pour", "xs", _LGRAY, qx + sz//2, qy + sz + 8, cx=True)
+                    self._txt("telecharger",  "xs", _LGRAY, qx + sz//2, qy + sz + 24, cx=True)
+                except Exception as e:
+                    logger.error(f"QR: {e}")
+            else:
+                self._txt("Photo enregistree !", "md", _LGRAY, self._w * 3//4, self._h//2, cx=True)
 
     def _r_error(self):
         self._screen.fill((50, 15, 15))
         self._txt("ERREUR", "xl", _RED, self._w // 2, self._h // 3, cx=True)
         self._txt(str(self._info.get("msg", ""))[:70], "xs", _LGRAY, self._w // 2, self._h // 2, cx=True)
         self._txt("Retour automatique...", "xs", _GRAY, self._w // 2, self._h * 2 // 3, cx=True)
+
+    def _r_confirm_quit(self):
+        """Dialogue de confirmation de fermeture."""
+        self._screen.fill(_DARK)
+        box_w = min(400, self._w - 40)
+        box_h = 180
+        box_x = (self._w - box_w) // 2
+        box_y = self._h // 2 - box_h // 2
+        pygame.draw.rect(self._screen, _DARK2, (box_x, box_y, box_w, box_h), border_radius=16)
+        pygame.draw.rect(self._screen, _RED,   (box_x, box_y, box_w, box_h), 2, border_radius=16)
+        self._txt("Quitter SnapForge ?", "md", _WHITE,
+                   self._w // 2, box_y + 40, cx=True)
+        self._txt("L'application va se fermer.", "xs", _GRAY,
+                   self._w // 2, box_y + 80, cx=True)
 
     # ------------------------------------------------------------------
     # Rendu admin

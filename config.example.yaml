@@ -4,6 +4,8 @@
 app:
   booth_name: "SnapForge"          # Nom affiché sur l'écran d'accueil
   fullscreen: true
+  # Paysage 800x480 (défaut) ou portrait 480x800 selon votre écran
+  # L'interface s'adapte automatiquement selon le ratio largeur/hauteur
   width: 800
   height: 480
   fps: 30
