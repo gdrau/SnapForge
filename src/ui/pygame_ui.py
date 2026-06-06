@@ -46,11 +46,18 @@ class _Btn:
 
     def draw(self, surf):
         if self.no_draw:
-            return   # Rendu géré par _r_admin (évite l'écrasement du texte)
+            return
         c = tuple(min(v + 25, 255) for v in self.color) if self._hover else self.color
         pygame.draw.rect(surf, c, self.rect, border_radius=self.radius)
         if self.font and self.text:
-            ts = self.font.render(str(self.text), True, self.text_color)
+            text = str(self.text)
+            max_w = self.rect.width - 12
+            # Troncature avec "…" si le texte dépasse la largeur du bouton
+            if self.font.size(text)[0] > max_w:
+                while len(text) > 1 and self.font.size(text + "…")[0] > max_w:
+                    text = text[:-1]
+                text += "…"
+            ts = self.font.render(text, True, self.text_color)
             surf.blit(ts, ts.get_rect(center=self.rect.center))
 
     def handle(self, event):
@@ -443,15 +450,12 @@ class PygameUI:
         self._buttons = btns
 
     def _admin_max_scroll(self) -> int:
-        """Calcule le scroll maximum pour ne pas dépasser le contenu."""
-        items = self._info.get("items", [])
-        total_h = HDR_H + 8
-        for item in items:
-            itype = item.get("type")
-            total_h += 12 if itype == "sep" else ROW_H
-        # Zone visible sous le header
-        visible_h = self._h - HDR_H
-        return max(0, total_h - visible_h - BTN_H - 8)
+        """Scroll maximum : contenu s'arrête avant le bouton fixe du bas."""
+        items        = self._info.get("items", [])
+        content_h    = self._admin_content_height(items)
+        bottom_res   = self._admin_bottom_reserved()
+        scrollable_h = self._h - HDR_H - bottom_res
+        return max(0, content_h - scrollable_h)
 
     # ------------------------------------------------------------------
     # Boucle principale
@@ -506,14 +510,7 @@ class PygameUI:
             settings = self._info.get("settings", {})
 
             if action == "admin_nav":
-                self._admin_selection_cache[self._admin_page] = self._admin_selection
-                self._admin_scroll_cache[self._admin_page] = self._admin_scroll
-                self._admin_stack.append(self._admin_page)
-                self._admin_page = data
-                self._admin_scroll = self._admin_scroll_cache.get(data, 0)
-                self._admin_selection = self._admin_selection_cache.get(data, 0)
-                self._text_editing = None
-                self._build_admin(settings)
+                self._admin_navigate_to(data, settings)
 
             elif action == "admin_back_btn":
                 self._admin_go_back(settings)
@@ -539,11 +536,11 @@ class PygameUI:
             break
 
     def _handle_admin_key(self, event) -> bool:
-        """Navigation clavier complète dans le menu admin."""
+        """Navigation clavier dans le menu admin — logique centralisée."""
         settings = self._info.get("settings", {})
-        items = self._info.get("items", [])
+        items    = self._info.get("items", [])
 
-        # --- Mode saisie texte ---
+        # Mode saisie texte — consomme TOUTES les touches
         if self._text_editing:
             cur = str(settings.get(self._text_editing, ""))
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
@@ -559,111 +556,152 @@ class PygameUI:
                 self._build_admin(settings)
             return True
 
-        # --- Navigation ---
-        focusable = [i for i, it in enumerate(items)
-                     if it.get("type") not in ("sep", "gpio_info")]
+        focusable = self._admin_focusable(items)
         if not focusable:
             if event.key == pygame.K_ESCAPE:
                 self._admin_go_back(settings)
             return True
 
-        # Index courant dans la liste focusable
-        sel = self._admin_selection
-        if sel not in focusable:
-            sel = focusable[0]
+        sel = self._admin_selection if self._admin_selection in focusable else focusable[0]
         pos = focusable.index(sel)
 
+        # Navigation verticale — CLAMPAGE (pas de wrap)
         if event.key == pygame.K_DOWN:
-            self._admin_selection = focusable[(pos + 1) % len(focusable)]
+            new_pos = min(pos + 1, len(focusable) - 1)  # ne dépasse jamais le dernier
+            self._admin_selection = focusable[new_pos]
             self._scroll_to_selection(items)
             return True
 
         if event.key == pygame.K_UP:
-            self._admin_selection = focusable[(pos - 1) % len(focusable)]
+            new_pos = max(pos - 1, 0)  # ne remonte jamais avant le premier
+            self._admin_selection = focusable[new_pos]
             self._scroll_to_selection(items)
             return True
 
-        if event.key == pygame.K_ESCAPE or event.key == pygame.K_LEFT:
-            item = items[sel]
-            if item.get("type") in ("cycle", "toggle") and event.key == pygame.K_LEFT:
-                # Valeur précédente
-                self._admin_cycle_item(item, settings, direction=-1)
+        if event.key == pygame.K_ESCAPE:
+            self._admin_go_back(settings)
+            return True
+
+        item  = items[sel]
+        itype = item.get("type")
+
+        if event.key == pygame.K_LEFT:
+            if itype in ("cycle", "toggle"):
+                self._admin_cycle_item(item, settings, -1)
             else:
                 self._admin_go_back(settings)
             return True
 
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_RIGHT):
-            item = items[sel]
-            itype = item.get("type")
-
-            if itype == "nav" or (itype == "nav" and event.key == pygame.K_RIGHT):
-                self._admin_selection_cache[self._admin_page] = self._admin_selection
-                self._admin_scroll_cache[self._admin_page] = self._admin_scroll
-                self._admin_stack.append(self._admin_page)
-                self._admin_page = item["target"]
-                self._admin_scroll = self._admin_scroll_cache.get(item["target"], 0)
-                self._admin_selection = self._admin_selection_cache.get(item["target"], 0)
-                self._text_editing = None
-                self._build_admin(settings)
-
+            if itype == "nav":
+                self._admin_navigate_to(item["target"], settings)
             elif itype in ("cycle", "toggle"):
-                direction = -1 if event.key == pygame.K_LEFT else 1
-                self._admin_cycle_item(item, settings, direction)
-
+                self._admin_cycle_item(item, settings, +1)
             elif itype == "text":
                 self._text_editing = item["key"]
                 self._build_admin(settings)
-
             elif itype == "action":
                 act = item.get("action")
                 if act == "admin_save":
                     self._emit("admin_save", dict(settings))
                 elif act == "admin_cancel":
                     self._emit("admin_cancel")
-
             elif itype == "back":
                 self._admin_go_back(settings)
-
             return True
 
         return True
 
-    def _admin_cycle_item(self, item: dict, settings: dict, direction: int = 1):
-        """Avance (+1) ou recule (-1) la valeur d'un item cycle/toggle."""
-        key = item["key"]
-        values = item.get("values", [False, True])
-        current = settings.get(key, values[0])
-        idx = values.index(current) if current in values else 0
-        settings[key] = values[(idx + direction) % len(values)]
-        self._info["settings"] = settings
+    # ------------------------------------------------------------------
+    # Helpers navigation admin
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _admin_focusable(items: list) -> list:
+        """Indices des items navigables (exclut sep et gpio_info)."""
+        return [i for i, it in enumerate(items)
+                if it.get("type") not in ("sep", "gpio_info")]
+
+    def _admin_navigate_to(self, target: str, settings: dict):
+        """Navigation FORWARD vers un sous-menu. Toujours reset à 0 (pas de restauration)."""
+        # Sauvegarder position actuelle (pour le BACK)
+        self._admin_selection_cache[self._admin_page] = self._admin_selection
+        self._admin_scroll_cache[self._admin_page]    = self._admin_scroll
+        self._admin_stack.append(self._admin_page)
+        self._admin_page = target
+        # Toujours partir du début (reset — pas de restauration de cache)
+        self._admin_scroll    = 0
+        self._admin_selection = 0
+        self._text_editing    = None
         self._build_admin(settings)
 
     def _admin_go_back(self, settings: dict):
-        """Retour à la page admin précédente ou fermeture du menu."""
+        """Navigation BACK — restaure la position de la page parente."""
         if self._admin_stack:
             self._admin_selection_cache[self._admin_page] = self._admin_selection
-            self._admin_scroll_cache[self._admin_page] = self._admin_scroll
+            self._admin_scroll_cache[self._admin_page]    = self._admin_scroll
             prev = self._admin_stack.pop()
-            self._admin_page = prev
-            self._admin_scroll = self._admin_scroll_cache.get(prev, 0)
+            self._admin_page      = prev
+            self._admin_scroll    = self._admin_scroll_cache.get(prev, 0)
             self._admin_selection = self._admin_selection_cache.get(prev, 0)
-            self._text_editing = None
+            self._text_editing    = None
             self._build_admin(settings)
         else:
             self._emit("admin_cancel")
 
+    def _admin_cycle_item(self, item: dict, settings: dict, direction: int = 1):
+        """Cycle la valeur d'un item (+1 ou -1)."""
+        key    = item["key"]
+        values = item.get("values", [False, True])
+        cur    = settings.get(key, values[0])
+        idx    = values.index(cur) if cur in values else 0
+        settings[key] = values[(idx + direction) % len(values)]
+        self._info["settings"] = settings
+        self._build_admin(settings)
+
+    def _admin_content_height(self, items: list) -> int:
+        """Hauteur totale du contenu scrollable pour une liste d'items."""
+        settings = self._info.get("settings", {})
+        h = 8
+        for item in items:
+            itype = item.get("type")
+            if itype == "sep":
+                h += 12
+            elif itype == "gpio_info":
+                gpio_cfg = settings.get("_gpio_config", {})
+                gpio_log = settings.get("_gpio_log", [])
+                h += ROW_H * (len(gpio_cfg) + 2) + min(len(gpio_log), 6) * 26
+            else:
+                h += ROW_H
+        return h
+
+    def _admin_bottom_reserved(self) -> int:
+        """Hauteur réservée en bas pour le bouton fixe (non-main pages)."""
+        return BTN_H + 8 if self._admin_page != "main" else 0
+
     def _scroll_to_selection(self, items: list):
-        """Ajuste le scroll pour que l'item sélectionné soit visible."""
+        """Scroll pour garder l'item sélectionné visible dans la zone scrollable."""
+        settings = self._info.get("settings", {})
         y = HDR_H + 8
         for i, item in enumerate(items):
-            itype = item.get("type")
             if i == self._admin_selection:
                 break
-            y += 12 if itype == "sep" else ROW_H
+            itype = item.get("type")
+            if itype == "sep":
+                y += 12
+            elif itype == "gpio_info":
+                gpio_cfg = settings.get("_gpio_config", {})
+                gpio_log = settings.get("_gpio_log", [])
+                y += ROW_H * (len(gpio_cfg) + 2) + min(len(gpio_log), 6) * 26
+            else:
+                y += ROW_H
+
+        bottom_reserved = self._admin_bottom_reserved()
+        visible_bottom  = self._h - bottom_reserved
         if y - self._admin_scroll < HDR_H + 4:
             self._admin_scroll = max(0, y - HDR_H - 8)
-        elif y - self._admin_scroll + ROW_H > self._h - BTN_H - 4:
-            self._admin_scroll = y + ROW_H - (self._h - BTN_H - 4)
+        elif y - self._admin_scroll + ROW_H > visible_bottom:
+            self._admin_scroll = y + ROW_H - visible_bottom
         self._admin_scroll = max(0, min(self._admin_scroll, self._admin_max_scroll()))
 
     def stop(self):
@@ -832,8 +870,10 @@ class PygameUI:
         val_w = 200
         val_x = margin + panel_w - val_w
 
-        # --- Zone scrollable ---
-        clip = pygame.Rect(0, HDR_H, self._w, self._h - HDR_H)
+        # --- Zone scrollable (s'arrête avant le bouton fixe du bas) ---
+        bottom_res  = self._admin_bottom_reserved()
+        scroll_area_h = self._h - HDR_H - bottom_res
+        clip = pygame.Rect(0, HDR_H, self._w, scroll_area_h)
         self._screen.set_clip(clip)
 
         y = HDR_H + 8 - scroll
@@ -932,7 +972,13 @@ class PygameUI:
         if hint:
             self._txt(hint, "xs", _ACCENT, self._w - 10, HDR_H // 2, ra=True)
 
-        # Le bouton ← Retour est géré par _FixedBtn dans _rebuild_admin_buttons
+        # Indicateur focus sur le bouton ← Retour quand il est sélectionné
+        items = self._info.get("items", [])
+        back_indices = [i for i, it in enumerate(items) if it.get("type") == "back"]
+        if back_indices and self._admin_selection == back_indices[0]:
+            by = self._h - BTN_H + 2
+            pygame.draw.rect(self._screen, _ACCENT,
+                             (margin - 8, by + 2, 4, BTN_H - 14), border_radius=2)
 
     def _r_admin_gpio_rows(self, start_y: int, settings: dict):
         """Affiche les infos GPIO dans la page diagnostic."""

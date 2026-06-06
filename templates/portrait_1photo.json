@@ -5,15 +5,15 @@
   "height": 1772,
   "background_color": [248, 248, 248],
   "slots": [
-    { "x": 103, "y": 157, "width": 975, "height": 1300 }
+    { "x": 103, "y": 257, "width": 975, "height": 1300 }
   ],
   "title_zone": {
-    "x": 40, "y": 40, "width": 1101, "height": 90,
-    "size": 52, "color": [26, 26, 26], "align": "center"
+    "x": 40, "y": 80, "width": 1101, "height": 90,
+    "size": 92, "color": [26, 26, 26], "align": "center"
   },
   "description_zone": {
-    "x": 40, "y": 1652, "width": 1101, "height": 80,
-    "size": 28, "color": [85, 85, 85], "align": "center"
+    "x": 40, "y": 1590, "width": 1101, "height": 80,
+    "size": 72, "color": [85, 85, 85], "align": "center"
   },
   "decorations": [],
   "text_elements": []
