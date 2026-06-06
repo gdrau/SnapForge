@@ -131,13 +131,11 @@ class Picamera2Camera:
             self._cam = Picamera2()
             pw = self._config.get("camera.preview_width", 800)
             ph = self._config.get("camera.preview_height", 480)
-            cw = self._config.get("camera.resolution_width", 3280)
-            ch = self._config.get("camera.resolution_height", 2464)
 
-            # Configuration preview + buffer haute résolution
+            # Preview SANS flux RAW : évite la surcharge du bus Unicam (cause du timeout)
+            # Le flux RAW n'est utilisé qu'au moment de la capture (switch_mode_and_capture_file)
             cfg = self._cam.create_preview_configuration(
                 main={"size": (pw, ph), "format": "RGB888"},
-                raw={"size": (cw, ch)},
             )
             self._cam.configure(cfg)
 
@@ -150,7 +148,7 @@ class Picamera2Camera:
                 )
 
             self._cam.start()
-            time.sleep(2.0)  # Chauffe capteur + AE
+            time.sleep(1.5)  # Chauffe capteur + AE
             logger.info("Picamera2 initialisée")
         except Exception as e:
             logger.error(f"Erreur init Picamera2: {e}")
