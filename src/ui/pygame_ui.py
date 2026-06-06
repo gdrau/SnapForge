@@ -902,7 +902,8 @@ class PygameUI:
             cy = y + ROW_H // 2
 
             # Indicateur de sélection clavier : barre orange à gauche de la ligne
-            if idx == sel and not self._text_editing:
+            # "back" exclu ici — la barre est dessinée sur le bouton fixe du bas
+            if idx == sel and not self._text_editing and itype != "back":
                 bar_x = margin - 8
                 pygame.draw.rect(self._screen, _ACCENT,
                                  (bar_x, y + 2, 4, ROW_H - 8), border_radius=2)
