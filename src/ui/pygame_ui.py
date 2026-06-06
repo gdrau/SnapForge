@@ -32,7 +32,7 @@ class _Btn:
     fixed = False   # True = position absolue, non affectée par le scroll admin
 
     def __init__(self, rect, text, color, text_color=_WHITE, font=None,
-                 action=None, data=None, radius=10):
+                 action=None, data=None, radius=10, no_draw=False):
         self.rect = pygame.Rect(rect)
         self.text = text
         self.color = color
@@ -41,9 +41,12 @@ class _Btn:
         self.action = action
         self.data = data
         self.radius = radius
+        self.no_draw = no_draw   # True = zone de clic invisible (rendu géré ailleurs)
         self._hover = False
 
     def draw(self, surf):
+        if self.no_draw:
+            return   # Rendu géré par _r_admin (évite l'écrasement du texte)
         c = tuple(min(v + 25, 255) for v in self.color) if self._hover else self.color
         pygame.draw.rect(surf, c, self.rect, border_radius=self.radius)
         if self.font and self.text:
@@ -411,11 +414,12 @@ class PygameUI:
 
             if itype == "text":
                 key = item["key"]
-                is_active = self._text_editing == key
-                color = _ACCENT if is_active else _PANEL
+                # no_draw=True : zone de clic invisible — le rendu du champ texte
+                # est fait dans _r_admin pour éviter que le bouton n'écrase le texte saisi
                 btns.append(_Btn(
                     (val_x, y + (ROW_H - 36) // 2, val_w, 36), "",
-                    color, action="admin_text_activate", data=key, radius=6,
+                    _PANEL, action="admin_text_activate", data=key, radius=6,
+                    no_draw=True,
                 ))
                 y += ROW_H
                 continue
@@ -688,14 +692,19 @@ class PygameUI:
     def _r_qr(self):
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
+        btn_area = 70   # hauteur réservée au bouton RETOUR ACCUEIL en bas
         if photo and Path(photo).exists():
             try:
                 img = pygame.image.load(photo)
                 iw, ih = img.get_size()
-                scale = min((self._w // 2 - 30) / iw, (self._h - 80) / ih)
+                # Laisser btn_area pixels libres en bas pour le bouton
+                available_h = self._h - btn_area - 20
+                scale = min((self._w // 2 - 30) / iw, available_h / ih)
                 nw, nh = int(iw * scale), int(ih * scale)
                 img = pygame.transform.scale(img, (nw, nh))
-                self._screen.blit(img, (15, (self._h - nh) // 2))
+                # Centrer verticalement dans la zone disponible (hors bouton)
+                img_y = (available_h - nh) // 2 + 10
+                self._screen.blit(img, (15, img_y))
             except Exception:
                 pass
         qr = self._info.get("qr")

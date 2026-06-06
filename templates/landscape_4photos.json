@@ -3,7 +3,7 @@
   "description": "Paysage 15x10cm — 4 photos, titre, description (1772x1181px @ 300dpi)",
   "width": 1772,
   "height": 1181,
-  "background_color": [26, 26, 46],
+  "background_color": [248, 248, 248],
   "slots": [
     { "x":  30, "y": 115, "width": 848, "height": 468 },
     { "x": 893, "y": 115, "width": 848, "height": 468 },
@@ -12,11 +12,11 @@
   ],
   "title_zone": {
     "x": 30, "y": 25, "width": 1712, "height": 75,
-    "size": 48, "color": [255, 255, 255], "align": "center"
+    "size": 48, "color": [30, 30, 30], "align": "center"
   },
   "description_zone": {
     "x": 30, "y": 1088, "width": 1712, "height": 65,
-    "size": 28, "color": [180, 180, 200], "align": "center"
+    "size": 28, "color": [100, 100, 100], "align": "center"
   },
   "decorations": [],
   "text_elements": []
