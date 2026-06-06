@@ -1,6 +1,6 @@
-import os
-import yaml
 import logging
+import shutil
+import yaml
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def load_config(config_path: str = None) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
-    logger.info(f"Configuration chargée depuis {path}")
+    logger.info(f"Configuration chargée depuis {path.resolve()}")
     return data or {}
 
 
@@ -43,12 +43,11 @@ class Config:
             self.get("photos.final_dir", "Photo/final"),
             "logs",
             "credentials",
+            "assets/backgrounds",
         ]
         for d in dirs:
             Path(d).mkdir(parents=True, exist_ok=True)
-
-        log_file = self.get("logging.file", "logs/photobooth.log")
-        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.get("logging.file", "logs/snapforge.log")).parent.mkdir(parents=True, exist_ok=True)
 
     def get(self, key_path: str, default=None):
         keys = key_path.split(".")
@@ -61,7 +60,6 @@ class Config:
         return val
 
     def set(self, key_path: str, value):
-        """Modifie une valeur via notation pointée."""
         keys = key_path.split(".")
         d = self._data
         for key in keys[:-1]:
@@ -69,10 +67,15 @@ class Config:
         d[keys[-1]] = value
 
     def save(self, path: str = DEFAULT_CONFIG):
-        """Sauvegarde la configuration courante en YAML."""
-        with open(path, "w", encoding="utf-8") as f:
+        """Sauvegarde la config avec un backup automatique."""
+        target = Path(path)
+        if target.exists():
+            backup = target.with_suffix(".yaml.bak")
+            shutil.copy2(target, backup)
+            logger.info(f"Backup config -> {backup}")
+        with open(target, "w", encoding="utf-8") as f:
             yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        logger.info(f"Configuration sauvegardée : {path}")
+        logger.info(f"Configuration sauvegardée : {target.resolve()}")
 
     def __getitem__(self, key):
         return self._data[key]

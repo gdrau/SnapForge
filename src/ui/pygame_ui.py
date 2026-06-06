@@ -6,34 +6,31 @@ from typing import Callable, List, Optional
 
 import numpy as np
 import pygame
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
 # Palette
-_BLACK      = (0,   0,   0)
-_WHITE      = (255, 255, 255)
-_DARK       = (22,  27,  34)
-_DARK2      = (36,  41,  47)
-_PANEL      = (48,  54,  61)
-_ACCENT     = (255, 165,   0)
-_GREEN      = (46,  160,  67)
-_RED        = (207,  34,  46)
-_BLUE       = (31,  111, 235)
-_GRAY       = (100, 110, 120)
-_LIGHT_GRAY = (190, 200, 210)
-_DISABLED   = (70,  78,  88)
+_BLACK  = (0,   0,   0)
+_WHITE  = (255, 255, 255)
+_DARK   = (22,  27,  34)
+_DARK2  = (36,  41,  47)
+_PANEL  = (48,  54,  61)
+_ACCENT = (255, 165,  0)
+_GREEN  = (46,  160,  67)
+_RED    = (207,  34,  46)
+_BLUE   = (31,  111, 235)
+_GRAY   = (100, 110, 120)
+_LGRAY  = (190, 200, 210)
+_DISABLED = (70, 78, 88)
 
-
-def _lighten(color, amount=30):
-    return tuple(min(v + amount, 255) for v in color)
+ROW_H = 54       # hauteur d'une ligne de menu
+HDR_H = 52       # hauteur de l'en-tête admin
+BTN_H = 52       # hauteur du bouton Sauvegarder/Annuler
 
 
 class _Btn:
-    """Bouton cliquable avec texte centré."""
-
     def __init__(self, rect, text, color, text_color=_WHITE, font=None,
-                 action=None, data=None, border_radius=12):
+                 action=None, data=None, radius=10):
         self.rect = pygame.Rect(rect)
         self.text = text
         self.color = color
@@ -41,19 +38,17 @@ class _Btn:
         self.font = font
         self.action = action
         self.data = data
-        self.radius = border_radius
+        self.radius = radius
         self._hover = False
 
-    def draw(self, surf: pygame.Surface):
-        c = _lighten(self.color) if self._hover else self.color
+    def draw(self, surf):
+        c = tuple(min(v + 25, 255) for v in self.color) if self._hover else self.color
         pygame.draw.rect(surf, c, self.rect, border_radius=self.radius)
-        if self._hover:
-            pygame.draw.rect(surf, _WHITE, self.rect, 2, border_radius=self.radius)
         if self.font and self.text:
-            ts = self.font.render(self.text, True, self.text_color)
+            ts = self.font.render(str(self.text), True, self.text_color)
             surf.blit(ts, ts.get_rect(center=self.rect.center))
 
-    def handle(self, event) -> Optional[tuple]:
+    def handle(self, event):
         if event.type == pygame.MOUSEMOTION:
             self._hover = self.rect.collidepoint(event.pos)
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -63,42 +58,40 @@ class _Btn:
 
 
 class PygameUI:
-    """
-    Interface plein écran Pygame.
 
-    Règle de thread safety :
-    - Les méthodes show_*() sont appelées depuis des threads FSM : elles ne font
-      que mettre à jour l'état interne (_screen_name, _info, _buttons).
-    - run() s'exécute dans le thread principal (Pygame l'exige) et appelle _render().
-    """
+    def __init__(self, config):
+        self._w = config.get("app.width", 800)
+        self._h = config.get("app.height", 480)
+        self._fps = config.get("app.fps", 30)
+        self._fullscreen = config.get("app.fullscreen", True)
+        self._font_path = config.get("app.font_path")
+        self._qr_size = config.get("qr.size", 300)
+
+        self._callback: Optional[Callable] = None
+        self._screen = None
+        self._clock = None
+        self._running = False
+
+        # Écran courant
+        self._screen_name = "idle"
+        self._buttons: List[_Btn] = []
+        self._info: dict = {}
+        self._preview_frame = None
+        self._preview_lock = threading.Lock()
+
+        # Admin
+        self._admin_page = "main"
+        self._admin_stack: List[str] = []
+        self._admin_scroll = 0
+        self._admin_scroll_cache: dict = {}
+        self._text_editing: Optional[str] = None
+
+        self._fonts: dict = {}
+        self._init_pygame()
 
     # ------------------------------------------------------------------
     # Init
     # ------------------------------------------------------------------
-
-    def __init__(self, config):
-        self._w: int = config.get("app.width", 800)
-        self._h: int = config.get("app.height", 480)
-        self._fps: int = config.get("app.fps", 30)
-        self._fullscreen: bool = config.get("app.fullscreen", True)
-        self._font_path: Optional[str] = config.get("app.font_path")
-        self._qr_size: int = config.get("qr.size", 300)
-        self._templates_available: List[str] = config.get("templates.available_templates",
-                                                           ["strip_classic", "dark_collage"])
-
-        self._callback: Optional[Callable] = None
-        self._screen: Optional[pygame.Surface] = None
-        self._clock = None
-        self._running = False
-
-        self._screen_name = "idle"
-        self._buttons: List[_Btn] = []
-        self._info: dict = {}
-        self._preview_frame: Optional[np.ndarray] = None
-        self._preview_lock = threading.Lock()
-
-        self._fonts: dict = {}
-        self._init_pygame()
 
     def _init_pygame(self):
         pygame.init()
@@ -111,7 +104,7 @@ class PygameUI:
         logger.info(f"Pygame UI : {self._w}x{self._h} fullscreen={self._fullscreen}")
 
     def _load_fonts(self):
-        specs = {"xs": 18, "sm": 24, "md": 30, "lg": 48, "xl": 72, "xxl": 120}
+        specs = {"xs": 18, "sm": 22, "md": 30, "lg": 48, "xl": 72, "xxl": 120}
         for name, size in specs.items():
             try:
                 if self._font_path and Path(self._font_path).exists():
@@ -128,102 +121,66 @@ class PygameUI:
         if self._callback:
             threading.Thread(target=self._callback, args=(action, data), daemon=True).start()
 
-    # ------------------------------------------------------------------
-    # Helpers construction UI
-    # ------------------------------------------------------------------
+    def _btn(self, text, color, rect, font="md", action=None, data=None, radius=10):
+        return _Btn(rect, text, color, font=self._fonts[font], action=action, data=data, radius=radius)
 
-    def _make_btn(self, text: str, color, rect, font_key="md",
-                  action=None, data=None, text_color=_WHITE) -> _Btn:
-        return _Btn(rect, text, color, text_color=text_color,
-                    font=self._fonts[font_key], action=action, data=data)
-
-    def _text_width(self, text: str, font_key: str) -> int:
-        return self._fonts[font_key].size(text)[0]
-
-    def _btn_auto(self, text: str, color, cx: int, cy: int, font_key="md",
-                  pad_x=40, pad_y=20, action=None, data=None) -> _Btn:
-        """Bouton auto-dimensionné : la taille s'adapte au texte."""
-        tw, th = self._fonts[font_key].size(text)
-        w, h = tw + pad_x * 2, th + pad_y * 2
-        rect = (cx - w // 2, cy - h // 2, w, h)
-        return _Btn(rect, text, color, font=self._fonts[font_key], action=action, data=data)
+    def _btn_auto(self, text, color, cx, cy, font="md", px=40, py=18, action=None, data=None):
+        tw, th = self._fonts[font].size(str(text))
+        w, h = tw + px * 2, th + py * 2
+        return _Btn((cx - w//2, cy - h//2, w, h), text, color,
+                    font=self._fonts[font], action=action, data=data)
 
     # ------------------------------------------------------------------
-    # API show_*() — appelée depuis threads FSM
+    # show_* — appelés depuis threads FSM
     # ------------------------------------------------------------------
 
-    def show_idle(self):
+    def show_idle(self, booth_name: str = "SnapForge"):
         self._screen_name = "idle"
-        self._info = {}
+        self._info = {"booth_name": booth_name}
         with self._preview_lock:
             self._preview_frame = None
         self._buttons = [
-            self._btn_auto(
-                "APPUYEZ POUR COMMENCER", _ACCENT,
-                cx=self._w // 2, cy=self._h - 80,
-                font_key="lg", pad_x=50, pad_y=22,
-                action="open_choose_format",   # -> CHOOSE_FORMAT, pas directement une session
-            )
+            self._btn_auto("APPUYEZ POUR COMMENCER", _ACCENT,
+                           self._w // 2, self._h - 80, font="lg", px=50, py=22,
+                           action="open_choose_format")
         ]
 
     def show_choose_format(self, layouts: List[int], selected: int):
         self._screen_name = "choose_format"
-        self._info = {"selected": selected, "layouts": layouts}
+        self._info = {"layouts": layouts, "selected": selected}
         self._rebuild_format_buttons(layouts, selected)
 
     def update_format_selection(self, selected: int):
         self._info["selected"] = selected
-        # Plus utilisé pour la mise en évidence, mais conservé pour le bouton physique
-        for btn in self._buttons:
-            if btn.action == "start_session" and isinstance(btn.data, int):
-                btn.color = _ACCENT if btn.data == selected else _DARK2
 
-    def _best_font_for_width(self, text: str, max_w: int, pad: int = 40) -> pygame.font.Font:
-        """Retourne la plus grande police qui fait tenir text dans max_w."""
+    def _rebuild_format_buttons(self, layouts, selected):
+        n = len(layouts)
+        margin, gap = 40, 30
+        btn_w = (self._w - 2 * margin - gap * (n - 1)) // n
+        btn_h = int(self._h * 0.55)
+        y = self._h // 2 - btn_h // 2 - 20
+        longest = max((f"{v} PHOTO{'S' if v > 1 else ''}" for v in layouts), key=len)
+        font = self._best_font_for(longest, btn_w)
+        btns = []
+        for i, v in enumerate(layouts):
+            x = margin + i * (btn_w + gap)
+            c = _ACCENT if v == selected else _BLUE
+            btns.append(_Btn((x, y, btn_w, btn_h), f"{v} PHOTO{'S' if v > 1 else ''}",
+                             c, font=font, action="start_session", data=v, radius=20))
+        self._buttons = btns
+
+    def _best_font_for(self, text, max_w, pad=40):
         for key in ("xl", "lg", "md", "sm", "xs"):
             if self._fonts[key].size(text)[0] + pad * 2 <= max_w:
                 return self._fonts[key]
         return self._fonts["xs"]
 
-    def _rebuild_format_buttons(self, layouts: List[int], selected: int):
-        """
-        Un tap sur un format = sélection ET démarrage immédiat.
-        La police s'adapte automatiquement à la largeur du bouton.
-        """
-        btns: List[_Btn] = []
-        n = len(layouts)
-        margin = 40
-        gap = 30
-        btn_w = (self._w - 2 * margin - gap * (n - 1)) // n
-        btn_h = int(self._h * 0.55)
-        y = self._h // 2 - btn_h // 2 - 20
-
-        # Police choisie d'après le label le plus long
-        longest = max((f"{v} PHOTO{'S' if v > 1 else ''}" for v in layouts), key=len)
-        font = self._best_font_for_width(longest, btn_w)
-
-        for i, v in enumerate(layouts):
-            x = margin + i * (btn_w + gap)
-            c = _ACCENT if v == selected else _BLUE
-            btns.append(_Btn(
-                (x, y, btn_w, btn_h),
-                f"{v} PHOTO{'S' if v > 1 else ''}",
-                c, font=font,
-                action="start_session", data=v, border_radius=20,
-            ))
-
-        self._buttons = btns
-
     def show_preview(self, total: int, remaining: int):
         self._screen_name = "preview"
         self._info = {"total": total, "remaining": remaining, "countdown": 0}
         self._buttons = [
-            self._btn_auto(
-                "CAPTURER", _ACCENT,
-                cx=self._w // 2, cy=self._h - 55,
-                font_key="md", pad_x=50, pad_y=18,
-                action="start_countdown",
-            )
+            self._btn_auto("CAPTURER", _ACCENT, self._w // 2, self._h - 55,
+                           font="md", px=50, py=18, action="start_countdown")
         ]
 
     def update_preview_frame(self, frame: np.ndarray):
@@ -232,7 +189,7 @@ class PygameUI:
 
     def show_countdown(self, value: int):
         self._info["countdown"] = value
-        self._buttons = []   # Masque CAPTURER pendant toute la séquence
+        self._buttons = []
 
     def show_capture_result(self, path: str, remaining: int):
         self._info["last_photo"] = path
@@ -249,25 +206,17 @@ class PygameUI:
     def show_review(self, photo_path: str, printer_enabled: bool = False):
         self._screen_name = "review"
         self._info = {"photo": photo_path}
-        margin = 20
-        btn_h = 60
-        btn_w = (self._w - 3 * margin) // 2
-        btns: List[_Btn] = []
+        m = 20
+        bh, bw = 60, (self._w - 3 * m) // 2
         if printer_enabled:
-            btns.append(_Btn(
-                (margin, self._h - btn_h - margin, btn_w, btn_h), "IMPRIMER", _BLUE,
-                font=self._fonts["sm"], action="confirm_print",
-            ))
-            btns.append(_Btn(
-                (margin * 2 + btn_w, self._h - btn_h - margin, btn_w, btn_h),
-                "CONTINUER", _GREEN, font=self._fonts["sm"], action="skip_print",
-            ))
+            self._buttons = [
+                self._btn("IMPRIMER", _BLUE, (m, self._h - bh - m, bw, bh), "sm", "confirm_print"),
+                self._btn("CONTINUER", _GREEN, (m*2 + bw, self._h - bh - m, bw, bh), "sm", "skip_print"),
+            ]
         else:
-            btns.append(_Btn(
-                (margin, self._h - btn_h - margin, self._w - 2 * margin, btn_h),
-                "CONTINUER", _GREEN, font=self._fonts["md"], action="skip_print",
-            ))
-        self._buttons = btns
+            self._buttons = [
+                self._btn("CONTINUER", _GREEN, (m, self._h - bh - m, self._w - 2*m, bh), "md", "skip_print"),
+            ]
 
     def show_print_wait(self):
         self._info["status"] = "Impression en cours..."
@@ -275,112 +224,190 @@ class PygameUI:
     def show_print_result(self, success: bool):
         self._info["status"] = "Imprime !" if success else "Erreur d'impression"
 
-    def show_uploading(self):
-        self._screen_name = "uploading"
-        self._buttons = []
-        self._info = {}
-
-    def show_qr(self, photo_path: str, qr_image, upload_url: Optional[str]):
+    def show_qr(self, photo_path: str, qr_image, upload_url):
         self._screen_name = "qr"
         self._info = {"photo": photo_path, "qr": qr_image, "url": upload_url}
         self._buttons = [
-            self._btn_auto(
-                "RETOUR ACCUEIL", _BLUE,
-                cx=self._w // 2, cy=self._h - 55,
-                font_key="sm", pad_x=40, pad_y=18,
-                action="return_idle",
-            )
+            self._btn_auto("RETOUR ACCUEIL", _BLUE, self._w // 2, self._h - 55,
+                           font="sm", px=40, py=18, action="return_idle")
         ]
 
     def show_error(self, message: str):
         self._screen_name = "error"
         self._buttons = []
-        self._info = {"msg": message}
+        self._info = {"msg": str(message)}
 
     # ------------------------------------------------------------------
-    # Menu admin
+    # Admin
     # ------------------------------------------------------------------
-
-    # --- Admin : état saisie texte ---
-    _text_editing: Optional[str] = None   # clé du champ en cours d'édition
-    _admin_scroll: int = 0
 
     def show_admin(self, settings: dict):
         self._screen_name = "admin"
-        self._info = {"settings": dict(settings)}
-        self._text_editing = None
+        self._admin_page = "main"
+        self._admin_stack = []
         self._admin_scroll = 0
-        self._rebuild_admin_ui(settings)
+        self._admin_scroll_cache = {}
+        self._text_editing = None
+        self._info = {"settings": dict(settings)}
+        self._build_admin(settings)
 
-    def _rebuild_admin_ui(self, settings: dict):
-        """Reconstruit les boutons du menu admin selon les settings courants."""
+    def _build_admin(self, settings: dict):
+        """Reconstruit les boutons de la page admin courante."""
+        items = self._admin_items(self._admin_page, settings)
+        self._info["items"] = items
+        self._rebuild_admin_buttons(items, settings)
+
+    def _admin_items(self, page: str, settings: dict) -> list:
+        """Retourne la liste des items pour une page admin."""
+        tpls = settings.get("_available_templates", [])
+        fmt_n = lambda v: f"{v} PHOTO{'S' if v>1 else ''}"
+        fmt_s = lambda v: f"{v} sec"
+        fmt_on = lambda v: "ACTIVE" if v else "INACTIF"
+        fmt_tpl = lambda v: v if v else "—"
+
+        if page == "main":
+            return [
+                {"type": "nav", "label": "Plugins",             "target": "plugins",
+                 "desc": "QR Code · IA · Impression · Upload"},
+                {"type": "nav", "label": "Photos / Templates",  "target": "photos",
+                 "desc": "Formats · Templates · Titres"},
+                {"type": "nav", "label": "Configuration",       "target": "general",
+                 "desc": "Nom du photobooth · Délai"},
+                {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
+                 "desc": "Boutons · LEDs · Journal"},
+                {"type": "sep"},
+                {"type": "action", "label": "Sauvegarder et quitter", "action": "admin_save",  "color": _GREEN},
+                {"type": "action", "label": "Quitter sans sauvegarder", "action": "admin_cancel", "color": _GRAY},
+            ]
+
+        if page == "plugins":
+            return [
+                {"type": "toggle", "label": "QR Code sur résultat", "key": "qr_on_result", "fmt": fmt_on},
+                {"type": "toggle", "label": "IA remplacement fond", "key": "ai_enabled",   "fmt": lambda v: "ACTIVEE" if v else "DESACTIVEE"},
+                {"type": "toggle", "label": "Impression",           "key": "print_enabled","fmt": lambda v: "ACTIVEE" if v else "DESACTIVEE"},
+                {"type": "toggle", "label": "Upload cloud",         "key": "cloud_enabled","fmt": lambda v: "ACTIVE" if v else "DESACTIVE"},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+
+        if page == "photos":
+            return [
+                {"type": "cycle", "label": "Option A (bouton 1)", "key": "option_a", "values": [1,2,3,4], "fmt": fmt_n},
+                {"type": "cycle", "label": "Option B (bouton 2)", "key": "option_b", "values": [1,2,3,4], "fmt": fmt_n},
+                {"type": "sep"},
+                {"type": "cycle", "label": "Template 1 photo",   "key": "tpl_1", "values": tpls or ["portrait_1photo"], "fmt": fmt_tpl},
+                {"type": "cycle", "label": "Template 2 photos",  "key": "tpl_2", "values": tpls or ["portrait_1photo"], "fmt": fmt_tpl},
+                {"type": "cycle", "label": "Template 3 photos",  "key": "tpl_3", "values": tpls or ["portrait_1photo"], "fmt": fmt_tpl},
+                {"type": "cycle", "label": "Template 4 photos",  "key": "tpl_4", "values": tpls or ["landscape_4photos"], "fmt": fmt_tpl},
+                {"type": "sep"},
+                {"type": "text",  "label": "Titre",              "key": "event_title"},
+                {"type": "text",  "label": "Description",        "key": "event_description"},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+
+        if page == "general":
+            return [
+                {"type": "text",  "label": "Nom du photobooth", "key": "booth_name"},
+                {"type": "cycle", "label": "Compte à rebours",  "key": "countdown", "values": [2,3,5,10], "fmt": fmt_s},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+
+        if page == "gpio":
+            return [
+                {"type": "gpio_info"},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+
+        return [{"type": "back"}]
+
+    def _rebuild_admin_buttons(self, items: list, settings: dict):
+        """Construit la liste de boutons pour les items de la page."""
         margin = 28
-        row_h = 46
-        row_gap = 6
         panel_w = self._w - 2 * margin
-        val_w = 210
+        val_w = 200
         val_x = margin + panel_w - val_w
-        header_h = 48
-        start_y = header_h + 10
-
-        # Items cyclables
-        cycle_items = [
-            ("Format option A",  "layout_a",      [1, 2, 3, 4],  lambda v: f"{v} PHOTO{'S' if v>1 else ''}"),
-            ("Format option B",  "layout_b",      [1, 2, 3, 4],  lambda v: f"{v} PHOTO{'S' if v>1 else ''}"),
-            ("Compte a rebours", "countdown",     [2, 3, 5, 10], lambda v: f"{v} sec"),
-            ("IA fond",          "ai_enabled",    [False, True],  lambda v: "ACTIVEE" if v else "DESACTIVEE"),
-            ("Impression",       "print_enabled", [False, True],  lambda v: "ACTIVEE" if v else "DESACTIVEE"),
-            ("Upload cloud",     "cloud_enabled", [False, True],  lambda v: "ACTIVE" if v else "DESACTIVE"),
-        ]
 
         btns: List[_Btn] = []
-        for i, (label, key, values, fmt) in enumerate(cycle_items):
-            y = start_y + i * (row_h + row_gap)
-            current = settings.get(key, values[0])
-            idx = values.index(current) if current in values else 0
-            next_val = values[(idx + 1) % len(values)]
-            color = (_GREEN if current else _DISABLED) if isinstance(current, bool) else _BLUE
-            new_s = {**settings, key: next_val}
-            btns.append(_Btn(
-                (val_x, y, val_w, row_h - 4), fmt(current), color,
-                font=self._fonts["xs"], action="admin_change", data=new_s, border_radius=6,
-            ))
+        y = HDR_H + 8  # les boutons ont des positions absolues; le rendu translate par scroll
 
-        # Champs texte (cliquables pour activer l'édition)
-        text_items = [("Titre", "event_title"), ("Description", "event_description")]
-        text_start_y = start_y + len(cycle_items) * (row_h + row_gap) + 14
-        for i, (label, key) in enumerate(text_items):
-            y = text_start_y + i * (row_h + row_gap)
-            is_active = self._text_editing == key
-            color = _ACCENT if is_active else _PANEL
-            btns.append(_Btn(
-                (val_x - 80, y, val_w + 80, row_h - 4), "", color,
-                font=self._fonts["xs"], action="admin_edit_text", data=key, border_radius=6,
-            ))
+        for item in items:
+            itype = item.get("type")
 
-        # Boutons action
-        action_y = text_start_y + len(text_items) * (row_h + row_gap) + 14
-        half = (panel_w - 8) // 2
-        btns.append(_Btn(
-            (margin, action_y, half, 46), "SAUVEGARDER", _GREEN,
-            font=self._fonts["sm"], action="admin_save", data=None, border_radius=8,
-        ))
-        btns.append(_Btn(
-            (margin + half + 8, action_y, half, 46), "ANNULER", _GRAY,
-            font=self._fonts["sm"], action="admin_cancel", data=None, border_radius=8,
-        ))
+            if itype == "sep":
+                y += 12
+                continue
+
+            if itype in ("back", "gpio_info"):
+                # Pas de bouton pour ces types (rendu spécial)
+                y += ROW_H
+                continue
+
+            if itype == "nav":
+                btns.append(_Btn(
+                    (margin, y, panel_w, ROW_H - 4), "", _DARK2,
+                    action="admin_nav", data=item["target"], radius=8,
+                ))
+                y += ROW_H
+                continue
+
+            if itype == "action":
+                btns.append(_Btn(
+                    (margin, y, panel_w, ROW_H - 4), item["label"], item["color"],
+                    font=self._fonts["sm"], action=item["action"], data=None, radius=8,
+                ))
+                y += ROW_H
+                continue
+
+            if itype in ("cycle", "toggle"):
+                key = item["key"]
+                values = item.get("values", [False, True])
+                current = settings.get(key, values[0])
+                idx = values.index(current) if current in values else 0
+                next_val = values[(idx + 1) % len(values)]
+                fmt = item.get("fmt", str)
+                is_bool = isinstance(current, bool)
+                color = (_GREEN if current else _DISABLED) if is_bool else _BLUE
+                btns.append(_Btn(
+                    (val_x, y + (ROW_H - 36) // 2, val_w, 36),
+                    fmt(current), color,
+                    font=self._fonts["sm"], action="admin_cycle",
+                    data={"key": key, "value": next_val}, radius=6,
+                ))
+                y += ROW_H
+                continue
+
+            if itype == "text":
+                key = item["key"]
+                is_active = self._text_editing == key
+                color = _ACCENT if is_active else _PANEL
+                btns.append(_Btn(
+                    (val_x, y + (ROW_H - 36) // 2, val_w, 36), "",
+                    color, action="admin_text_activate", data=key, radius=6,
+                ))
+                y += ROW_H
+                continue
+
+            y += ROW_H
 
         self._buttons = btns
-        self._info["cycle_items"] = cycle_items
-        self._info["text_items"] = text_items
-        self._info["layout"] = {
-            "start_y": start_y, "row_h": row_h, "row_gap": row_gap,
-            "text_start_y": text_start_y, "val_x": val_x, "val_w": val_w,
-            "margin": margin, "action_y": action_y,
-        }
+        self._info["_btn_base_y"] = HDR_H + 8
+
+    def _admin_max_scroll(self) -> int:
+        """Calcule le scroll maximum pour ne pas dépasser le contenu."""
+        items = self._info.get("items", [])
+        total_h = HDR_H + 8
+        for item in items:
+            itype = item.get("type")
+            total_h += 12 if itype == "sep" else ROW_H
+        # Zone visible sous le header
+        visible_h = self._h - HDR_H
+        return max(0, total_h - visible_h - BTN_H - 8)
 
     # ------------------------------------------------------------------
-    # Boucle principale (thread principal uniquement)
+    # Boucle principale
     # ------------------------------------------------------------------
 
     def run(self):
@@ -389,135 +416,172 @@ class PygameUI:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self._running = False
-                elif event.type == pygame.KEYDOWN:
-                    if not self._handle_text_input(event):
-                        self._on_key(event)
-                elif event.type == pygame.MOUSEWHEEL and self._screen_name == "admin":
-                    self._admin_scroll = max(0, self._admin_scroll - event.y * 20)
+                    continue
 
-                # Translate les positions des boutons pour le scroll admin
-                translated_pos = None
-                if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
-                    ox, oy = event.pos
+                if event.type == pygame.KEYDOWN:
                     if self._screen_name == "admin":
-                        translated_pos = (ox, oy + self._admin_scroll)
+                        if self._handle_admin_key(event):
+                            continue
+                    self._on_key(event)
+                    continue
 
-                for btn in list(self._buttons):
-                    if translated_pos:
-                        # Créer un événement virtuel avec position scrollée
-                        fake = pygame.event.Event(event.type, {**event.__dict__, 'pos': translated_pos})
-                        r = btn.handle(fake)
-                    else:
-                        r = btn.handle(event)
-                    if r:
-                        action, data = r
-                        if action == "admin_change" and isinstance(data, dict):
-                            self._info["settings"] = data
-                            self._rebuild_admin_ui(data)
-                        elif action == "admin_edit_text" and isinstance(data, str):
-                            self._text_editing = data
-                            self._rebuild_admin_ui(self._info.get("settings", {}))
-                        elif action == "admin_save":
-                            data = dict(self._info.get("settings", {}))
-                            self._emit(action, data)
-                        else:
-                            self._emit(action, data)
+                if event.type == pygame.MOUSEWHEEL and self._screen_name == "admin":
+                    delta = -event.y * 18
+                    max_s = self._admin_max_scroll()
+                    self._admin_scroll = max(0, min(self._admin_scroll + delta, max_s))
+                    continue
+
+                # Translate les clics pour l'admin (scroll)
+                pos = event.pos if hasattr(event, "pos") else None
+                if pos and self._screen_name == "admin":
+                    translated = (pos[0], pos[1] + self._admin_scroll)
+                    fake = pygame.event.Event(event.type, {**event.__dict__, "pos": translated})
+                    self._handle_buttons(fake)
+                else:
+                    self._handle_buttons(event)
+
             self._render()
             self._clock.tick(self._fps)
         pygame.quit()
 
+    def _handle_buttons(self, event):
+        for btn in list(self._buttons):
+            r = btn.handle(event)
+            if not r:
+                continue
+            action, data = r
+            settings = self._info.get("settings", {})
+
+            if action == "admin_nav":
+                self._admin_scroll_cache[self._admin_page] = self._admin_scroll
+                self._admin_stack.append(self._admin_page)
+                self._admin_page = data
+                self._admin_scroll = self._admin_scroll_cache.get(data, 0)
+                self._text_editing = None
+                self._build_admin(settings)
+
+            elif action == "admin_cycle":
+                key, val = data["key"], data["value"]
+                settings[key] = val
+                self._info["settings"] = settings
+                self._build_admin(settings)
+
+            elif action == "admin_text_activate":
+                self._text_editing = data
+                self._build_admin(settings)
+
+            elif action == "admin_save":
+                self._emit("admin_save", dict(settings))
+
+            elif action == "admin_cancel":
+                self._emit("admin_cancel")
+
+            else:
+                self._emit(action, data)
+            break
+
+    def _handle_admin_key(self, event) -> bool:
+        """Gère les touches clavier dans l'admin. Retourne True si consommé."""
+        if self._text_editing:
+            settings = self._info.get("settings", {})
+            cur = str(settings.get(self._text_editing, ""))
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._text_editing = None
+                self._build_admin(settings)
+                return True
+            if event.key == pygame.K_ESCAPE:
+                self._text_editing = None
+                self._build_admin(settings)
+                return True
+            if event.key == pygame.K_BACKSPACE:
+                settings[self._text_editing] = cur[:-1]
+                self._info["settings"] = settings
+                self._build_admin(settings)
+                return True
+            if event.unicode and event.unicode.isprintable() and len(cur) < 60:
+                settings[self._text_editing] = cur + event.unicode
+                self._info["settings"] = settings
+                self._build_admin(settings)
+                return True
+            return True  # Consomme tous les events clavier en mode saisie
+
+        if event.key == pygame.K_ESCAPE:
+            if self._admin_stack:
+                # Retour page précédente
+                prev = self._admin_stack.pop()
+                self._admin_scroll_cache[self._admin_page] = self._admin_scroll
+                self._admin_page = prev
+                self._admin_scroll = self._admin_scroll_cache.get(prev, 0)
+                self._build_admin(self._info.get("settings", {}))
+            else:
+                # Sur main → fermer admin
+                self._emit("admin_cancel")
+            return True
+        return False
+
     def stop(self):
         self._running = False
 
-    def _handle_text_input(self, event) -> bool:
-        """Gère la saisie clavier dans un champ texte admin. Retourne True si consommé."""
-        if self._screen_name != "admin" or self._text_editing is None:
-            return False
-        settings = self._info.get("settings", {})
-        current = str(settings.get(self._text_editing, ""))
-        if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
-            self._text_editing = None
-            self._rebuild_admin_ui(settings)
-            return True
-        if event.key == pygame.K_ESCAPE:
-            self._text_editing = None
-            self._rebuild_admin_ui(settings)
-            return True  # ESC ferme l'édition mais pas le menu
-        if event.key == pygame.K_BACKSPACE:
-            settings[self._text_editing] = current[:-1]
-        elif event.unicode and event.unicode.isprintable():
-            if len(current) < 60:
-                settings[self._text_editing] = current + event.unicode
-        self._info["settings"] = settings
-        self._rebuild_admin_ui(settings)
-        return True
-
     def _on_key(self, event):
         if event.key == pygame.K_ESCAPE:
-            if self._screen_name == "admin":
-                self._emit("admin_cancel")
-            else:
-                self._emit("open_admin")
+            self._emit("open_admin")
         elif event.key == pygame.K_SPACE:
             if self._screen_name == "idle":
-                self._emit("start_session")
+                self._emit("open_choose_format")
             elif self._screen_name == "preview":
                 self._emit("start_countdown")
-        elif event.key == pygame.K_p and self._screen_name == "review":
-            self._emit("confirm_print")
-        elif event.key == pygame.K_RETURN and self._screen_name == "choose_format":
-            self._emit("start_session", self._info.get("selected"))
 
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
 
     def _render(self):
-        sn = self._screen_name
         dispatch = {
             "idle":          self._r_idle,
             "choose_format": self._r_choose,
             "preview":       self._r_preview,
             "processing":    self._r_processing,
             "review":        self._r_review,
-            "uploading":     self._r_uploading,
             "qr":            self._r_qr,
             "error":         self._r_error,
             "admin":         self._r_admin,
         }
-        dispatch.get(sn, lambda: self._screen.fill(_DARK))()
+        dispatch.get(self._screen_name, lambda: self._screen.fill(_DARK))()
         for btn in self._buttons:
-            btn.draw(self._screen)
+            # Pour l'admin : translate les boutons selon le scroll
+            if self._screen_name == "admin":
+                real_rect = btn.rect.move(0, -self._admin_scroll)
+                if real_rect.bottom < HDR_H or real_rect.top > self._h:
+                    continue
+                orig = btn.rect
+                btn.rect = real_rect
+                btn.draw(self._screen)
+                btn.rect = orig
+            else:
+                btn.draw(self._screen)
         pygame.display.flip()
-
-    # --- IDLE ---
 
     def _r_idle(self):
         self._screen.fill(_DARK)
-        self._text("PHOTOBOOTH", "xl", _WHITE, self._w // 2, self._h // 3, center=True)
-        self._text("Bienvenue !", "md", _GRAY, self._w // 2, self._h // 2, center=True)
+        name = self._info.get("booth_name", "SnapForge")
+        font = self._best_font_for(name, self._w - 60)
+        surf = font.render(name, True, _WHITE)
+        self._screen.blit(surf, surf.get_rect(center=(self._w // 2, self._h // 3)))
+        self._txt("Bienvenue !", "md", _GRAY, self._w // 2, self._h // 2, cx=True)
         t = int(time.time() * 2) % 3
         for i in range(3):
-            c = _ACCENT if i == t else _GRAY
-            pygame.draw.circle(self._screen, c, (self._w // 2 - 20 + i * 20, self._h * 3 // 4 - 60), 7)
-        self._text("ESC = menu admin", "xs", _DISABLED, self._w - 10, self._h - 14,
-                   center=False, align_right=True)
-
-    # --- CHOOSE FORMAT ---
+            pygame.draw.circle(self._screen, _ACCENT if i == t else _GRAY,
+                               (self._w // 2 - 20 + i * 20, self._h * 3 // 4 - 60), 7)
 
     def _r_choose(self):
         self._screen.fill(_DARK)
-        self._text("Combien de photos ?", "lg", _WHITE, self._w // 2, 48, center=True)
-
-        self._text("ESC = menu admin", "xs", _DISABLED, self._w - 10, self._h - 12,
-                   center=False, align_right=True)
-
-    # --- PREVIEW ---
+        self._txt("Combien de photos ?", "lg", _WHITE, self._w // 2, 48, cx=True)
+        self._txt("Appuyez sur votre choix pour commencer", "sm", _GRAY,
+                  self._w // 2, self._h - 28, cx=True)
 
     def _r_preview(self):
         with self._preview_lock:
             frame = self._preview_frame
-
         if frame is not None:
             try:
                 surf = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
@@ -530,35 +594,22 @@ class PygameUI:
 
         remaining = self._info.get("remaining", 0)
         total = self._info.get("total", 0)
-        taken = total - remaining
-        self._shadow_text(f"{taken}/{total} photo{'s' if total > 1 else ''}",
-                          "sm", _WHITE, 14, 14)
+        self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
         cd = self._info.get("countdown", 0)
         if cd > 0:
-            self._shadow_text(str(cd), "xxl", _WHITE,
-                              self._w // 2, self._h // 2, center=True)
-
-        self._text("ESC = admin", "xs", _DISABLED, self._w - 10, self._h - 14,
-                   center=False, align_right=True)
-
-    # --- PROCESSING ---
+            self._shadow_txt(str(cd), "xxl", _WHITE, self._w // 2, self._h // 2, cx=True)
 
     def _r_processing(self):
         self._screen.fill(_DARK)
-        self._text("Traitement...", "lg", _WHITE, self._w // 2, self._h // 3, center=True)
-        step = self._info.get("step", "")
-        self._text(step, "sm", _ACCENT, self._w // 2, self._h // 2, center=True)
-        bar_w = 400
-        bar_x = (self._w - bar_w) // 2
-        bar_y = self._h * 2 // 3
-        pygame.draw.rect(self._screen, _DARK2, (bar_x, bar_y, bar_w, 10), border_radius=5)
-        fill = int((time.time() * 80) % (bar_w + 60)) - 30
-        fill = max(0, min(fill, bar_w))
+        self._txt("Traitement...", "lg", _WHITE, self._w // 2, self._h // 3, cx=True)
+        self._txt(self._info.get("step", ""), "sm", _ACCENT, self._w // 2, self._h // 2, cx=True)
+        bw, bx = 400, (self._w - 400) // 2
+        by = self._h * 2 // 3
+        pygame.draw.rect(self._screen, _DARK2, (bx, by, bw, 10), border_radius=5)
+        fill = max(0, min(int((time.time() * 80) % (bw + 60)) - 30, bw))
         if fill > 0:
-            pygame.draw.rect(self._screen, _ACCENT, (bar_x, bar_y, fill, 10), border_radius=5)
-
-    # --- REVIEW ---
+            pygame.draw.rect(self._screen, _ACCENT, (bx, by, fill, 10), border_radius=5)
 
     def _r_review(self):
         self._screen.fill(_BLACK)
@@ -567,177 +618,247 @@ class PygameUI:
             try:
                 img = pygame.image.load(photo)
                 iw, ih = img.get_size()
-                max_w, max_h = self._w - 40, self._h - 110
-                scale = min(max_w / iw, max_h / ih)
+                scale = min((self._w - 40) / iw, (self._h - 110) / ih)
                 nw, nh = int(iw * scale), int(ih * scale)
                 img = pygame.transform.scale(img, (nw, nh))
                 self._screen.blit(img, ((self._w - nw) // 2, 15))
             except Exception as e:
-                logger.error(f"Review image: {e}")
-        status = self._info.get("status")
-        if status:
-            self._text(status, "sm", _ACCENT, self._w // 2, self._h - 90, center=True)
-
-
-    # --- UPLOADING ---
-
-    def _r_uploading(self):
-        self._screen.fill(_DARK)
-        self._text("Envoi en cours...", "lg", _WHITE, self._w // 2, self._h // 2, center=True)
-
-    # --- QR ---
+                logger.error(f"Review: {e}")
+        if self._info.get("status"):
+            self._txt(self._info["status"], "sm", _ACCENT, self._w // 2, self._h - 90, cx=True)
 
     def _r_qr(self):
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
-        qr_img = self._info.get("qr")
         if photo and Path(photo).exists():
             try:
                 img = pygame.image.load(photo)
                 iw, ih = img.get_size()
-                max_w = self._w // 2 - 30
-                max_h = self._h - 80
-                scale = min(max_w / iw, max_h / ih)
+                scale = min((self._w // 2 - 30) / iw, (self._h - 80) / ih)
                 nw, nh = int(iw * scale), int(ih * scale)
                 img = pygame.transform.scale(img, (nw, nh))
                 self._screen.blit(img, (15, (self._h - nh) // 2))
             except Exception:
                 pass
-        if qr_img is not None:
+        qr = self._info.get("qr")
+        if qr is not None:
             try:
-                pil = qr_img.convert("RGB")
+                pil = qr.convert("RGB")
                 qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
                 sz = self._qr_size
                 qsurf = pygame.transform.scale(qsurf, (sz, sz))
                 qx = self._w - sz - 15
                 qy = (self._h - sz) // 2 - 20
                 self._screen.blit(qsurf, (qx, qy))
-                self._text("Scannez pour", "xs", _LIGHT_GRAY, qx + sz // 2, qy + sz + 6, center=True)
-                self._text("telecharger", "xs", _LIGHT_GRAY, qx + sz // 2, qy + sz + 24, center=True)
+                self._txt("Scannez pour", "xs", _LGRAY, qx + sz // 2, qy + sz + 8, cx=True)
+                self._txt("telecharger", "xs", _LGRAY, qx + sz // 2, qy + sz + 24, cx=True)
             except Exception as e:
-                logger.error(f"QR render: {e}")
+                logger.error(f"QR: {e}")
         else:
-            self._text("Pas de QR code", "sm", _GRAY, self._w * 3 // 4, self._h // 2, center=True)
-
-
-    # --- ERROR ---
+            self._txt("Photo enregistree !", "md", _LGRAY, self._w * 3 // 4, self._h // 2, cx=True)
 
     def _r_error(self):
         self._screen.fill((50, 15, 15))
-        self._text("ERREUR", "xl", _RED, self._w // 2, self._h // 3, center=True)
-        msg = str(self._info.get("msg", ""))[:70]
-        self._text(msg, "xs", _LIGHT_GRAY, self._w // 2, self._h // 2, center=True)
-        self._text("Retour a l'accueil...", "xs", _GRAY, self._w // 2, self._h * 2 // 3, center=True)
+        self._txt("ERREUR", "xl", _RED, self._w // 2, self._h // 3, cx=True)
+        self._txt(str(self._info.get("msg", ""))[:70], "xs", _LGRAY, self._w // 2, self._h // 2, cx=True)
+        self._txt("Retour automatique...", "xs", _GRAY, self._w // 2, self._h * 2 // 3, cx=True)
 
-    # --- ADMIN ---
+    # ------------------------------------------------------------------
+    # Rendu admin
+    # ------------------------------------------------------------------
 
     def _r_admin(self):
-        """Rendu du menu admin avec défilement."""
         self._screen.fill(_DARK)
         settings = self._info.get("settings", {})
-        layout = self._info.get("layout", {})
-        if not layout:
-            return
-
+        items = self._info.get("items", [])
         scroll = self._admin_scroll
-        header_h = 48
-        margin = layout.get("margin", 28)
-        row_h = layout.get("row_h", 46)
-        row_gap = layout.get("row_gap", 6)
-        start_y = layout.get("start_y", header_h + 10)
-        text_start_y = layout.get("text_start_y", start_y + 6 * (row_h + row_gap) + 14)
-        val_x = layout.get("val_x", self._w - 238)
-        action_y = layout.get("action_y", text_start_y + 2 * (row_h + row_gap) + 14)
+        margin = 28
+        panel_w = self._w - 2 * margin
+        val_w = 200
+        val_x = margin + panel_w - val_w
 
-        # Zone de clip (sous le header)
-        clip_rect = pygame.Rect(0, header_h, self._w, self._h - header_h)
-        self._screen.set_clip(clip_rect)
+        # --- Zone scrollable ---
+        clip = pygame.Rect(0, HDR_H, self._w, self._h - HDR_H)
+        self._screen.set_clip(clip)
 
-        cycle_items = self._info.get("cycle_items", [])
-        text_items = self._info.get("text_items", [])
+        y = HDR_H + 8 - scroll
 
-        # --- Cycle items ---
-        for i, (label, key, _, __) in enumerate(cycle_items):
-            y = start_y + i * (row_h + row_gap) - scroll
-            if y + row_h < header_h or y > self._h:
+        for item in items:
+            itype = item.get("type")
+
+            if itype == "sep":
+                sy = y + 6
+                if HDR_H <= sy <= self._h:
+                    pygame.draw.line(self._screen, _PANEL, (margin, sy), (self._w - margin, sy), 1)
+                y += 12
                 continue
-            cy = y + (row_h - 4) // 2
-            if i > 0:
-                pygame.draw.line(self._screen, _PANEL, (margin, y - 3), (self._w - margin, y - 3), 1)
-            self._text(label, "xs", _LIGHT_GRAY, margin, cy, center=False)
 
-        # --- Séparateur section événement ---
-        sep_y = text_start_y - 10 - scroll
-        if header_h <= sep_y <= self._h:
-            pygame.draw.line(self._screen, _ACCENT, (margin, sep_y), (self._w - margin, sep_y), 2)
-            self._text("EVENEMENT", "xs", _ACCENT, margin, sep_y - 14)
-
-        # --- Text input items ---
-        for i, (label, key) in enumerate(text_items):
-            y = text_start_y + i * (row_h + row_gap) - scroll
-            if y + row_h < header_h or y > self._h:
+            if itype == "gpio_info":
+                self._r_admin_gpio_rows(y, settings)
+                gpio_cfg = settings.get("_gpio_config", {})
+                y += ROW_H * (len(gpio_cfg) + 2)
                 continue
-            cy = y + (row_h - 4) // 2
-            is_active = self._text_editing == key
-            self._text(label, "xs", _LIGHT_GRAY, margin, cy, center=False)
 
-            # Zone de saisie avec texte courant
-            field_x = val_x - 80
-            field_w = 210 + 80
-            field_h = row_h - 4
-            bg_color = _ACCENT if is_active else _PANEL
-            pygame.draw.rect(self._screen, bg_color, (field_x, y, field_w, field_h), border_radius=6)
-            text_val = str(settings.get(key, ""))
-            display = text_val
-            if is_active:
-                # Curseur clignotant
-                if int(time.time() * 2) % 2 == 0:
+            if y + ROW_H < HDR_H or y > self._h:
+                y += ROW_H
+                continue
+
+            cy = y + ROW_H // 2
+
+            if itype == "nav":
+                pygame.draw.rect(self._screen, _DARK2,
+                                 (margin, y, panel_w, ROW_H - 4), border_radius=8)
+                self._txt(item["label"], "sm", _WHITE, margin + 12, cy - 10)
+                self._txt(item.get("desc", ""), "xs", _GRAY, margin + 12, cy + 10)
+                self._txt("→", "sm", _LGRAY, self._w - margin - 10, cy, cx=False, ra=True)
+                y += ROW_H
+                continue
+
+            if itype == "action":
+                # Rendu par _Btn, juste passer
+                y += ROW_H
+                continue
+
+            if itype in ("cycle", "toggle"):
+                key = item["key"]
+                self._txt(item["label"], "xs", _LGRAY, margin, cy - 1)
+                if i := next((k for k, itm in enumerate(items) if itm is item), None):
+                    pass
+                # Valeur affichée par le bouton
+                y += ROW_H
+                continue
+
+            if itype == "text":
+                key = item["key"]
+                is_active = self._text_editing == key
+                self._txt(item["label"], "xs", _LGRAY, margin, cy - 1)
+                # Champ texte
+                fx, fy = val_x, y + (ROW_H - 36) // 2
+                fw, fh = val_w, 36
+                pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
+                                 (fx, fy, fw, fh), border_radius=6)
+                val = str(settings.get(key, ""))
+                display = val
+                font = self._fonts["xs"]
+                while font.size(display)[0] > fw - 16 and display:
+                    display = display[1:]
+                if is_active and int(time.time() * 2) % 2 == 0:
                     display += "|"
-            # Tronquer si trop long
-            font = self._fonts["xs"]
-            while font.size(display)[0] > field_w - 16 and len(display) > 1:
-                display = display[1:]
-            self._text(display, "xs", _WHITE, field_x + 8, y + (field_h - font.get_height()) // 2)
+                ts = font.render(display, True, _WHITE)
+                self._screen.blit(ts, (fx + 8, fy + (fh - ts.get_height()) // 2))
+                y += ROW_H
+                continue
+
+            if itype == "back":
+                by2 = y + 4
+                if HDR_H <= by2 + ROW_H - 8 <= self._h:
+                    pygame.draw.rect(self._screen, _PANEL,
+                                     (margin, by2, 160, ROW_H - 8), border_radius=8)
+                    self._txt("← Retour", "sm", _LGRAY, margin + 80, by2 + (ROW_H - 8) // 2, cx=True)
+                y += ROW_H
+                continue
+
+            y += ROW_H
+
+        # Indicateur de scroll
+        max_s = self._admin_max_scroll()
+        if max_s > 0 and scroll > 0:
+            pct = scroll / max_s
+            bar_h = max(30, int((self._h - HDR_H) * 0.4))
+            bar_y = HDR_H + int(pct * (self._h - HDR_H - bar_h))
+            pygame.draw.rect(self._screen, _GRAY, (self._w - 5, bar_y, 3, bar_h), border_radius=2)
 
         self._screen.set_clip(None)
 
-        # --- En-tête fixe (non scrollable) ---
-        pygame.draw.rect(self._screen, _PANEL, (0, 0, self._w, header_h))
-        self._text("CONFIGURATION", "md", _WHITE, self._w // 2, header_h // 2, center=True)
-        hint = "Entree = confirmer" if self._text_editing else "ESC = annuler"
-        self._text(hint, "xs", _DISABLED, self._w - 10, header_h // 2, align_right=True)
+        # En-tête fixe
+        pygame.draw.rect(self._screen, _PANEL, (0, 0, self._w, HDR_H))
+        page_titles = {
+            "main": "ADMINISTRATION",
+            "plugins": "PLUGINS",
+            "photos": "PHOTOS / TEMPLATES",
+            "general": "CONFIGURATION",
+            "gpio": "DIAGNOSTIC GPIO",
+        }
+        title = page_titles.get(self._admin_page, self._admin_page.upper())
+        self._txt(title, "md", _WHITE, self._w // 2, HDR_H // 2, cx=True)
 
-        # Indicateur de scroll si contenu dépasse
-        total_h = action_y + 46 + 14
-        if total_h > self._h - header_h:
-            pct = scroll / max(1, total_h - (self._h - header_h))
-            bar_h = max(30, int((self._h - header_h) * (self._h - header_h) / total_h))
-            bar_y = header_h + int(pct * (self._h - header_h - bar_h))
-            pygame.draw.rect(self._screen, _GRAY, (self._w - 6, bar_y, 4, bar_h), border_radius=2)
+        if self._admin_stack:
+            self._txt("← ESC", "xs", _GRAY, 12, HDR_H // 2)
+        hint = "Entree = confirmer" if self._text_editing else ""
+        if hint:
+            self._txt(hint, "xs", _ACCENT, self._w - 10, HDR_H // 2, ra=True)
+
+        # "Retour" clickable en bas (hors zone scrollable) — uniquement si la page n'est pas "main"
+        if self._admin_page != "main":
+            by3 = self._h - BTN_H - 4
+            pygame.draw.rect(self._screen, _DARK2, (margin, by3, 180, BTN_H - 8), border_radius=8)
+            self._txt("← Retour", "sm", _LGRAY, margin + 90, by3 + (BTN_H - 8) // 2, cx=True)
+            # Bouton "retour" cliquable — on le dessine séparément via overlay
+            if pygame.mouse.get_pressed()[0]:
+                mx, my = pygame.mouse.get_pos()
+                if margin <= mx <= margin + 180 and by3 <= my <= by3 + BTN_H - 8:
+                    pass  # géré via _handle_buttons
+
+    def _r_admin_gpio_rows(self, start_y: int, settings: dict):
+        """Affiche les infos GPIO dans la page diagnostic."""
+        gpio_cfg = settings.get("_gpio_config", {})
+        gpio_log = settings.get("_gpio_log", [])
+        margin = 28
+        y = start_y
+
+        labels = {
+            "photo_btn":   ("Bouton photo",     "BOARD 11 / BCM17"),
+            "print_btn":   ("Bouton print",     "BOARD 13 / BCM27"),
+            "photo_led":   ("LED photo",        "BOARD 7  / BCM4"),
+            "print_led":   ("LED impression",   "BOARD 15 / BCM22"),
+            "startup_led": ("LED startup",      "BOARD 29 / BCM5"),
+            "sequence_led":("LED séquence",     "BOARD 31 / BCM6"),
+            "flash_led":   ("LED flash",        "BOARD 33 / BCM13"),
+        }
+        for key, (label, pin) in labels.items():
+            if y + ROW_H < HDR_H or y > self._h:
+                y += ROW_H
+                continue
+            cy = y + ROW_H // 2
+            self._txt(label, "xs", _LGRAY, margin, cy)
+            val = gpio_cfg.get(key, pin)
+            self._txt(str(val) if val != pin else pin, "xs", _BLUE,
+                      self._w - margin - 5, cy, ra=True)
+            y += ROW_H
+
+        bounce = gpio_cfg.get("bounce_ms", 50)
+        self._txt(f"Anti-rebond : {bounce} ms", "xs", _GRAY, margin, y + 10)
+        y += ROW_H
+
+        # Journal
+        if gpio_log:
+            self._txt("Journal GPIO :", "xs", _ACCENT, margin, y + 14)
+            y += ROW_H
+            for entry in reversed(gpio_log[-6:]):
+                if y > self._h:
+                    break
+                self._txt(entry, "xs", _LGRAY, margin + 8, y + 10)
+                y += 26
 
     # ------------------------------------------------------------------
-    # Helpers rendu texte + indicateurs boutons
+    # Helpers texte
     # ------------------------------------------------------------------
 
-    def _text(self, text: str, size: str, color, x: int, y: int,
-              center=False, align_right=False):
+    def _txt(self, text, size, color, x, y, cx=False, ra=False):
         font = self._fonts.get(size, self._fonts["sm"])
         surf = font.render(str(text), True, color)
-        if center:
+        if cx:
             rect = surf.get_rect(center=(x, y))
-        elif align_right:
+        elif ra:
             rect = surf.get_rect(right=x, centery=y)
         else:
             rect = surf.get_rect(topleft=(x, y))
         self._screen.blit(surf, rect)
 
-    def _shadow_text(self, text: str, size: str, color, x: int, y: int, center=False):
+    def _shadow_txt(self, text, size, color, x, y, cx=False):
         font = self._fonts.get(size, self._fonts["sm"])
-        shadow = font.render(str(text), True, _BLACK)
-        main = font.render(str(text), True, color)
-        if center:
-            r = main.get_rect(center=(x, y))
-        else:
-            r = main.get_rect(topleft=(x, y))
-        self._screen.blit(shadow, r.move(2, 2))
-        self._screen.blit(main, r)
+        sh = font.render(str(text), True, _BLACK)
+        mn = font.render(str(text), True, color)
+        r = mn.get_rect(center=(x, y)) if cx else mn.get_rect(topleft=(x, y))
+        self._screen.blit(sh, r.move(2, 2))
+        self._screen.blit(mn, r)

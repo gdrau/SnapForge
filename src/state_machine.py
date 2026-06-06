@@ -1,10 +1,11 @@
 import logging
 import threading
 import time
+from collections import deque
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Deque, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +19,12 @@ class State(Enum):
     PROCESSING = auto()
     REVIEW = auto()
     PRINT_WAIT = auto()
-    UPLOADING = auto()
     QR_DISPLAY = auto()
     ADMIN = auto()
     ERROR = auto()
 
 
 class Session:
-    """Données d'une session de capture."""
 
     def __init__(self, layout_count: int, raw_dir: str, final_dir: str):
         self.layout_count = layout_count
@@ -35,8 +34,7 @@ class Session:
         self.final_dir = Path(final_dir)
         self.final_dir.mkdir(parents=True, exist_ok=True)
 
-        # Numéro séquentiel basé sur les fichiers existants
-        existing = len(list(self.final_dir.glob("photobooth_*.jpg")))
+        existing = len(list(self.final_dir.glob("snapforge_*.jpg")))
         self._number = existing + 1
 
         self.raw_photos: List[str] = []
@@ -47,7 +45,7 @@ class Session:
 
     @property
     def final_filename(self) -> str:
-        return f"photobooth_{self._number:04d}_{self.timestamp}.jpg"
+        return f"snapforge_{self._number:04d}_{self.timestamp}.jpg"
 
     @property
     def final_path(self) -> str:
@@ -85,13 +83,19 @@ class StateMachine:
         self._session: Optional[Session] = None
         self._return_timer: Optional[threading.Timer] = None
 
-        self._available_layouts: List[int] = config.get("photos.available_layouts", [1, 4])
-        self._default_layout: int = config.get("photos.default_layout", self._available_layouts[0])
-        self._countdown_s: int = config.get("camera.countdown_seconds", 3)
-        self._template: str = config.get("templates.default", "portrait_1photo")
-        self._font_path: Optional[str] = config.get("app.font_path")
+        # Options lues depuis config (compatibilité option_a/b + legacy available_layouts)
+        self._option_a: int = config.get("photos.option_a",
+                          (config.get("photos.available_layouts", [1, 4]) or [1])[0])
+        self._option_b: int = config.get("photos.option_b",
+                          (config.get("photos.available_layouts", [1, 4]) or [1, 4])[-1])
+
+        self._countdown_s: int = config.get("session.countdown_seconds",
+                             config.get("camera.countdown_seconds", 3))
         self._raw_dir: str = config.get("photos.raw_dir", "Photo/raw")
         self._final_dir: str = config.get("photos.final_dir", "Photo/final")
+
+        # Journal GPIO pour le diagnostic
+        self._gpio_log: Deque[str] = deque(maxlen=20)
 
     def start(self):
         self._buttons.on_photo_button(self._on_photo_button)
@@ -108,7 +112,7 @@ class StateMachine:
             pass
 
     # ------------------------------------------------------------------
-    # Machine d'états
+    # FSM
     # ------------------------------------------------------------------
 
     def _go(self, state: State):
@@ -123,35 +127,27 @@ class StateMachine:
             State.PROCESSING:    self._enter_processing,
             State.REVIEW:        self._enter_review,
             State.PRINT_WAIT:    self._enter_print_wait,
-            State.UPLOADING:     self._enter_uploading,
             State.QR_DISPLAY:    self._enter_qr_display,
             State.ADMIN:         self._enter_admin,
             State.ERROR:         self._enter_error,
         }[state]()
-
-    # --- IDLE ---
 
     def _enter_idle(self):
         self._session = None
         self._lights.all_off()
         self._lights.startup_on()
         self._lights.photo_ready()
-        self._ui.show_idle()
-
-    # --- CHOOSE_FORMAT ---
+        booth_name = self._config.get("app.booth_name", "SnapForge")
+        self._ui.show_idle(booth_name)
 
     def _enter_choose_format(self):
         self._lights.sequence_blink()
-        self._ui.show_choose_format(self._available_layouts, self._default_layout)
-
-    # --- PREVIEW ---
+        self._ui.show_choose_format([self._option_a, self._option_b], self._option_a)
 
     def _enter_preview(self):
         self._lights.sequence_on()
         self._ui.show_preview(self._session.layout_count, self._session.remaining)
         self._camera.start_preview(self._ui.update_preview_frame)
-
-    # --- COUNTDOWN ---
 
     def _enter_countdown(self):
         self._lights.sequence_blink()
@@ -163,8 +159,6 @@ class StateMachine:
             time.sleep(1)
         self._go(State.CAPTURE)
 
-    # --- CAPTURE ---
-
     def _enter_capture(self):
         path = self._session.next_raw_path()
         self._lights.flash_async()
@@ -174,11 +168,9 @@ class StateMachine:
         try:
             self._camera.capture(path)
             self._session.raw_photos.append(path)
-            n = len(self._session.raw_photos)
-            logger.info(f"Photo {n}/{self._session.layout_count} : {path}")
+            logger.info(f"Photo {len(self._session.raw_photos)}/{self._session.layout_count}: {path}")
             self._ui.show_capture_result(path, self._session.remaining)
             time.sleep(0.8)
-
             if self._session.is_complete:
                 self._camera.stop_preview()
                 self._go(State.PROCESSING)
@@ -189,8 +181,6 @@ class StateMachine:
             self._session.error = str(e)
             self._go(State.ERROR)
 
-    # --- PROCESSING ---
-
     def _enter_processing(self):
         self._lights.sequence_blink()
         self._ui.show_processing("Assemblage en cours...")
@@ -199,26 +189,25 @@ class StateMachine:
     def _do_processing(self):
         try:
             photos = self._session.raw_photos
-
             if self._ai.should_apply and self._ai.apply_on == "raw_photo":
                 self._ui.show_processing("IA : remplacement de fond...")
-                processed = [self._ai.process(p) for p in photos]
-                self._session.processed_photos = processed
+                self._session.processed_photos = [self._ai.process(p) for p in photos]
             else:
                 self._session.processed_photos = photos
 
             self._ui.show_processing("Composition de l'image...")
-            # Choisir le template selon le nombre de photos de la session
-            layout_templates = self._config.get("templates.layout_templates", {})
+
+            # Template selon le nombre de photos de la session
             n = self._session.layout_count
-            template_name = layout_templates.get(n,
-                            layout_templates.get(str(n), self._template))
+            template_name = self._config.get(f"templates.photo_{n}",
+                            self._config.get("templates.default", "portrait_1photo"))
+            logger.info(f"Template selectionne pour {n} photo(s) : '{template_name}'")
 
             self._composer.compose(
                 self._session.processed_photos,
                 template_name,
                 self._session.final_path,
-                font_path=self._font_path,
+                font_path=self._config.get("app.font_path"),
                 title=self._config.get("event.title", ""),
                 description=self._config.get("event.description", ""),
             )
@@ -230,10 +219,8 @@ class StateMachine:
                 self._session.final_photo = out
 
             if self._printer.enabled:
-                # Avec imprimante : REVIEW pour que l'utilisateur choisisse d'imprimer ou non
                 self._go(State.REVIEW)
             else:
-                # Sans imprimante : affichage direct du résultat + QR, upload en arrière-plan
                 threading.Thread(target=self._do_upload, daemon=True).start()
                 self._go(State.QR_DISPLAY)
 
@@ -242,15 +229,10 @@ class StateMachine:
             self._session.error = str(e)
             self._go(State.ERROR)
 
-    # --- REVIEW ---
-
     def _enter_review(self):
         self._lights.photo_ready()
-        if self._printer.enabled:
-            self._lights.print_ready()
-        self._ui.show_review(self._session.final_photo, printer_enabled=self._printer.enabled)
-
-    # --- PRINT_WAIT ---
+        self._lights.print_ready()
+        self._ui.show_review(self._session.final_photo, printer_enabled=True)
 
     def _enter_print_wait(self):
         self._lights.print_blink()
@@ -261,38 +243,28 @@ class StateMachine:
         success = self._printer.print_photo(self._session.final_photo)
         self._ui.show_print_result(success)
         time.sleep(2)
-        self._go(State.UPLOADING)
-
-    # --- UPLOADING ---
-
-    def _enter_uploading(self):
-        self._lights.sequence_blink()
-        self._ui.show_uploading()
         threading.Thread(target=self._do_upload, daemon=True).start()
+        self._go(State.QR_DISPLAY)
 
     def _do_upload(self):
         try:
-            url = self._uploader.upload(
-                self._session.final_photo, self._session.final_filename
-            )
+            url = self._uploader.upload(self._session.final_photo, self._session.final_filename)
             self._session.upload_url = url
         except Exception as e:
             logger.error(f"Upload: {e}")
-        self._go(State.QR_DISPLAY)
-
-    # --- QR_DISPLAY ---
 
     def _enter_qr_display(self):
         self._lights.all_off()
         self._lights.startup_on()
-        qr_img = self._qr.generate(
-            self._session.final_filename,
-            str(self._session.session_dir / "qrcode.png"),
-        )
+        show_qr = self._config.get("plugins.qr_on_result", True)
+        qr_img = None
+        if show_qr:
+            qr_img = self._qr.generate(
+                self._session.final_filename,
+                str(self._session.session_dir / "qrcode.png"),
+            )
         self._ui.show_qr(self._session.final_photo, qr_img, self._session.upload_url)
         self._schedule_return(self._qr.display_duration)
-
-    # --- ADMIN ---
 
     def _enter_admin(self):
         self._cancel_timer()
@@ -302,46 +274,78 @@ class StateMachine:
             pass
         self._lights.all_off()
         self._lights.startup_on()
-        self._ui.show_admin(self._build_admin_settings())
+        settings = self._build_admin_settings()
+        self._ui.show_admin(settings)
 
     def _build_admin_settings(self) -> dict:
+        tpl_names = self._composer.available()
         return {
-            'layout_a':    self._available_layouts[0] if self._available_layouts else 1,
-            'layout_b':    self._available_layouts[-1] if len(self._available_layouts) > 1 else 4,
-            'ai_enabled':    self._config.get('ai.enabled', False),
-            'print_enabled': self._config.get('printing.enabled', False),
-            'cloud_enabled': self._config.get('cloud.enabled', False),
-            'countdown':     self._countdown_s,
-            'event_title':   self._config.get('event.title', ''),
-            'event_description': self._config.get('event.description', ''),
+            # Plugins
+            "qr_on_result":    self._config.get("plugins.qr_on_result", True),
+            "ai_enabled":      self._config.get("ai.enabled", False),
+            "print_enabled":   self._config.get("printing.enabled", False),
+            "cloud_enabled":   self._config.get("cloud.enabled", False),
+            # Photos
+            "option_a":        self._option_a,
+            "option_b":        self._option_b,
+            "tpl_1":           self._config.get("templates.photo_1", "portrait_1photo"),
+            "tpl_2":           self._config.get("templates.photo_2", "portrait_1photo"),
+            "tpl_3":           self._config.get("templates.photo_3", "portrait_1photo"),
+            "tpl_4":           self._config.get("templates.photo_4", "landscape_4photos"),
+            "event_title":     self._config.get("event.title", ""),
+            "event_description": self._config.get("event.description", ""),
+            # Config générale
+            "booth_name":      self._config.get("app.booth_name", "SnapForge"),
+            "countdown":       self._countdown_s,
+            # Metadata UI
+            "_available_templates": tpl_names,
+            "_gpio_log":       list(self._gpio_log),
+            "_gpio_config": {
+                "photo_btn":  self._config.get("gpio.photo_button_pin", 11),
+                "print_btn":  self._config.get("gpio.print_button_pin", 13),
+                "photo_led":  self._config.get("gpio.photo_led_pin", 7),
+                "print_led":  self._config.get("gpio.print_led_pin", 15),
+                "startup_led": self._config.get("gpio.startup_led_pin", 29),
+                "sequence_led": self._config.get("gpio.sequence_led_pin", 31),
+                "flash_led":  self._config.get("gpio.flash_led_pin", 33),
+                "bounce_ms":  int(self._config.get("gpio.button_bounce_time", 0.05) * 1000),
+            },
         }
 
     def _apply_admin_settings(self, settings: dict):
-        la = int(settings.get('layout_a', 1))
-        lb = int(settings.get('layout_b', 4))
-        if la == lb:
-            lb = 4 if la != 4 else 1
-        self._available_layouts = sorted({la, lb})
-        self._default_layout = self._available_layouts[0]
-        self._countdown_s = int(settings.get('countdown', 3))
+        oa = max(1, min(4, int(settings.get("option_a", 1))))
+        ob = max(1, min(4, int(settings.get("option_b", 4))))
+        if oa == ob:
+            ob = 4 if oa != 4 else 1
+        self._option_a = oa
+        self._option_b = ob
+        self._countdown_s = int(settings.get("countdown", 3))
 
-        self._config.set('photos.available_layouts', self._available_layouts)
-        self._config.set('photos.default_layout', self._default_layout)
-        self._config.set('ai.enabled', bool(settings.get('ai_enabled', False)))
-        self._config.set('printing.enabled', bool(settings.get('print_enabled', False)))
-        self._config.set('cloud.enabled', bool(settings.get('cloud_enabled', False)))
-        self._config.set('camera.countdown_seconds', self._countdown_s)
-        self._config.set('event.title', settings.get('event_title', ''))
-        self._config.set('event.description', settings.get('event_description', ''))
+        updates = {
+            "photos.option_a":        oa,
+            "photos.option_b":        ob,
+            "plugins.qr_on_result":   bool(settings.get("qr_on_result", True)),
+            "ai.enabled":             bool(settings.get("ai_enabled", False)),
+            "printing.enabled":       bool(settings.get("print_enabled", False)),
+            "cloud.enabled":          bool(settings.get("cloud_enabled", False)),
+            "templates.photo_1":      settings.get("tpl_1", "portrait_1photo"),
+            "templates.photo_2":      settings.get("tpl_2", "portrait_1photo"),
+            "templates.photo_3":      settings.get("tpl_3", "portrait_1photo"),
+            "templates.photo_4":      settings.get("tpl_4", "landscape_4photos"),
+            "event.title":            settings.get("event_title", ""),
+            "event.description":      settings.get("event_description", ""),
+            "app.booth_name":         settings.get("booth_name", "SnapForge"),
+            "session.countdown_seconds": self._countdown_s,
+        }
+        for key, val in updates.items():
+            self._config.set(key, val)
 
-        self._ai._enabled = bool(settings.get('ai_enabled', False))
-        self._printer._config_enabled = bool(settings.get('print_enabled', False))
-        self._uploader._enabled = bool(settings.get('cloud_enabled', False))
+        self._ai._enabled = bool(settings.get("ai_enabled", False))
+        self._printer._config_enabled = bool(settings.get("print_enabled", False))
+        self._uploader._enabled = bool(settings.get("cloud_enabled", False))
 
-        logger.info(f"Admin: layouts={self._available_layouts} "
-                    f"titre='{settings.get('event_title')}'")
-
-    # --- ERROR ---
+        logger.info(f"Admin applique: options={oa}/{ob} countdown={self._countdown_s}s "
+                    f"booth='{settings.get('booth_name')}'")
 
     def _enter_error(self):
         self._lights.all_off()
@@ -355,64 +359,45 @@ class StateMachine:
         self._schedule_return(6)
 
     # ------------------------------------------------------------------
-    # Handlers boutons physiques
+    # Boutons physiques
     # ------------------------------------------------------------------
 
-    def _on_photo_button(self):
-        """
-        Bouton 1 (photo) = action principale ou option GAUCHE.
+    def _log_gpio(self, msg: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        entry = f"[{ts}] {msg}"
+        self._gpio_log.append(entry)
+        logger.debug(f"[GPIO] {entry}")
 
-        Règle écran par écran :
-          IDLE          -> 1 bouton visible -> démarre le choix de format
-          CHOOSE_FORMAT -> 2 options       -> sélectionne la 1re option (gauche)
-          PREVIEW       -> 1 bouton        -> lance le compte à rebours
-          REVIEW        -> 1 ou 2 boutons  -> imprime (si printer) OU continue
-          QR_DISPLAY    -> 1 bouton        -> retour accueil
-          ERROR         -> retour accueil immédiat
-        """
-        logger.debug(f"[BTN1] etat={self._state.name}")
+    def _on_photo_button(self):
+        self._log_gpio(f"BTN1 presse (etat={self._state.name})")
         if self._state == State.IDLE:
             self._go(State.CHOOSE_FORMAT)
         elif self._state == State.CHOOSE_FORMAT:
-            # Option gauche = 1re option de la liste
-            self._start_session(self._available_layouts[0])
+            self._start_session(self._option_a)
         elif self._state == State.PREVIEW:
             self._go(State.COUNTDOWN)
         elif self._state == State.REVIEW:
-            if self._printer.enabled:
-                self._go(State.PRINT_WAIT)   # bouton gauche = IMPRIMER
-            else:
-                self._go(State.UPLOADING)    # seul bouton = CONTINUER
+            self._go(State.PRINT_WAIT)
         elif self._state in (State.QR_DISPLAY, State.ERROR):
             self._cancel_timer()
             self._go(State.IDLE)
 
     def _on_print_button(self):
-        """
-        Bouton 2 (print) = action secondaire ou option DROITE.
-
-        Règle écran par écran :
-          CHOOSE_FORMAT -> 2 options      -> sélectionne la 2e option (droite)
-          REVIEW        -> 2 boutons      -> continue sans imprimer (droite)
-          QR_DISPLAY    -> retour accueil (même que bouton 1)
-          Autres        -> ignoré si 1 seul bouton visible
-        """
-        logger.debug(f"[BTN2] etat={self._state.name}")
+        self._log_gpio(f"BTN2 presse (etat={self._state.name})")
         if self._state == State.CHOOSE_FORMAT:
-            # Option droite = dernière option de la liste
-            self._start_session(self._available_layouts[-1])
-        elif self._state == State.REVIEW and self._printer.enabled:
-            self._go(State.UPLOADING)    # bouton droit = CONTINUER sans imprimer
+            self._start_session(self._option_b)
+        elif self._state == State.REVIEW:
+            self._go(State.QR_DISPLAY)
         elif self._state == State.QR_DISPLAY:
             self._cancel_timer()
             self._go(State.IDLE)
 
     # ------------------------------------------------------------------
-    # Touchscreen / clavier
+    # Touchscreen
     # ------------------------------------------------------------------
 
     def handle_touch(self, action: str, data=None):
-        logger.debug(f"[TOUCH] {action} data={data} etat={self._state.name}")
+        logger.debug(f"[TOUCH] {action} etat={self._state.name}")
 
         if action == "open_admin":
             if self._state != State.ADMIN:
@@ -422,12 +407,6 @@ class StateMachine:
         if action == "open_choose_format":
             if self._state == State.IDLE:
                 self._go(State.CHOOSE_FORMAT)
-            return
-
-        if action == "admin_change":
-            # Mise à jour live de l'affichage admin sans sauvegarder
-            if self._state == State.ADMIN and isinstance(data, dict):
-                self._ui.show_admin(data)
             return
 
         if action == "admin_save":
@@ -444,32 +423,26 @@ class StateMachine:
 
         if action == "start_session":
             if self._state in (State.IDLE, State.CHOOSE_FORMAT):
-                count = data if isinstance(data, int) else self._default_layout
+                count = data if isinstance(data, int) else self._option_a
                 self._start_session(count)
-
-        elif action == "select_format":
-            if self._state == State.CHOOSE_FORMAT and isinstance(data, int):
-                self._default_layout = data
-                self._ui.update_format_selection(data)
 
         elif action == "start_countdown":
             if self._state == State.PREVIEW:
                 self._go(State.COUNTDOWN)
 
         elif action == "confirm_print":
-            if self._state == State.REVIEW and self._printer.enabled:
+            if self._state == State.REVIEW:
                 self._go(State.PRINT_WAIT)
 
         elif action == "skip_print":
             if self._state == State.REVIEW:
-                self._go(State.UPLOADING)
+                threading.Thread(target=self._do_upload, daemon=True).start()
+                self._go(State.QR_DISPLAY)
 
         elif action == "return_idle":
             self._cancel_timer()
             self._go(State.IDLE)
 
-    # ------------------------------------------------------------------
-    # Helpers
     # ------------------------------------------------------------------
 
     def _start_session(self, layout_count: int):
@@ -478,12 +451,9 @@ class StateMachine:
 
     def _schedule_return(self, delay: float):
         self._cancel_timer()
-        self._return_timer = threading.Timer(delay, self._auto_return)
+        self._return_timer = threading.Timer(delay, lambda: self._go(State.IDLE))
         self._return_timer.daemon = True
         self._return_timer.start()
-
-    def _auto_return(self):
-        self._go(State.IDLE)
 
     def _cancel_timer(self):
         if self._return_timer:

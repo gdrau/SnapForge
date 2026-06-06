@@ -14,7 +14,12 @@ class Template:
         self.name: str = data["name"]
         self.width: int = data["width"]
         self.height: int = data["height"]
-        self.background_color: tuple = tuple(data.get("background_color", [255, 255, 255]))
+        # Support background section (new) ou background_color (legacy)
+        bg = data.get("background", {})
+        self.bg_type: str = bg.get("type", "color")
+        self.bg_image_path: Optional[str] = bg.get("path")
+        self.bg_fallback: tuple = tuple(bg.get("fallback_color",
+                                        data.get("background_color", [248, 248, 248])))
         self.slots: list = data["slots"]
         self.overlay_path: Optional[str] = data.get("overlay_path")
         self.text_elements: list = data.get("text_elements", [])
@@ -36,20 +41,21 @@ class Composer:
     def __init__(self, config):
         self._config = config
         self._templates_dir = Path(config.get("templates.templates_dir", "templates"))
-        self._templates: dict[str, Template] = {}
+        self._templates: dict = {}
         self._load_all()
 
     def _load_all(self):
         if not self._templates_dir.exists():
-            logger.warning(f"Dossier templates introuvable : {self._templates_dir}")
+            logger.warning(f"Dossier templates introuvable : {self._templates_dir.resolve()}")
             return
         for path in sorted(self._templates_dir.glob("*.json")):
             try:
                 t = Template.from_file(str(path))
                 self._templates[path.stem] = t
-                logger.info(f"Template chargé : {path.stem}")
+                logger.info(f"Template charge : {path.stem} ({path.resolve()})")
             except Exception as e:
                 logger.error(f"Erreur chargement template {path}: {e}")
+        logger.info(f"Templates disponibles : {list(self._templates.keys())}")
 
     def available(self) -> List[str]:
         return list(self._templates.keys())
@@ -63,12 +69,23 @@ class Composer:
         title: Optional[str] = None,
         description: Optional[str] = None,
     ) -> str:
+        logger.info(f"Composition : template='{template_name}' photos={len(photo_paths)}")
+
         template = self._templates.get(template_name)
         if not template:
-            logger.warning(f"Template '{template_name}' introuvable, composition automatique")
-            return self._compose_auto(photo_paths, output_path)
+            logger.warning(
+                f"Template '{template_name}' introuvable dans {list(self._templates.keys())}. "
+                f"Fallback vers premier template disponible."
+            )
+            if self._templates:
+                template = next(iter(self._templates.values()))
+                logger.info(f"Fallback template : {template.name}")
+            else:
+                logger.error("Aucun template disponible — composition automatique")
+                return self._compose_auto(photo_paths, output_path)
 
-        canvas = Image.new("RGB", (template.width, template.height), template.background_color)
+        # Fond
+        canvas = self._make_background(template)
 
         # Photos
         for i, photo_path in enumerate(photo_paths):
@@ -82,23 +99,18 @@ class Composer:
             except Exception as e:
                 logger.error(f"Erreur placement photo {photo_path}: {e}")
 
-        # Overlay PNG
         if template.overlay_path:
             self._apply_overlay(canvas, template.overlay_path, template.width, template.height)
 
-        # Décorations (lignes, etc.)
         for dec in template.decorations:
             self._draw_decoration(canvas, dec)
 
-        # Titre dynamique
         if template.title_zone and title:
             self._draw_zone_text(canvas, template.title_zone, title, font_path)
 
-        # Description dynamique
         if template.description_zone and description:
             self._draw_zone_text(canvas, template.description_zone, description, font_path)
 
-        # Textes statiques du template
         for elem in template.text_elements:
             try:
                 self._draw_text(canvas, elem, font_path)
@@ -112,11 +124,26 @@ class Composer:
         return output_path
 
     # ------------------------------------------------------------------
-    # Helpers rendu
-    # ------------------------------------------------------------------
+
+    def _make_background(self, template: Template) -> Image.Image:
+        """Crée le canvas de fond selon la configuration du template."""
+        if template.bg_type == "image" and template.bg_image_path:
+            p = Path(template.bg_image_path)
+            if p.exists():
+                try:
+                    bg = Image.open(p).convert("RGB")
+                    bg = self._fit_crop(bg, template.width, template.height)
+                    logger.debug(f"Fond image : {p}")
+                    return bg
+                except Exception as e:
+                    logger.warning(f"Fond image erreur ({p}): {e} — fallback couleur")
+            else:
+                logger.warning(f"Fond image introuvable : {p.resolve()} — fallback couleur")
+
+        # Couleur de fond (fallback ou explicite)
+        return Image.new("RGB", (template.width, template.height), template.bg_fallback)
 
     def _fit_crop(self, img: Image.Image, tw: int, th: int) -> Image.Image:
-        """Redimensionne et recadre au centre pour remplir exactement tw×th."""
         src_r = img.width / img.height
         dst_r = tw / th
         if src_r > dst_r:
@@ -128,102 +155,82 @@ class Composer:
         top = (new_h - th) // 2
         return img.crop((left, top, left + tw, top + th))
 
-    def _apply_overlay(self, canvas: Image.Image, overlay_path: str, w: int, h: int):
-        p = Path(overlay_path)
+    def _apply_overlay(self, canvas, path, w, h):
+        p = Path(path)
         if not p.exists():
             return
         try:
-            overlay = Image.open(p).convert("RGBA").resize((w, h), Image.LANCZOS)
+            ov = Image.open(p).convert("RGBA").resize((w, h), Image.LANCZOS)
             base = canvas.convert("RGBA")
-            base.alpha_composite(overlay)
+            base.alpha_composite(ov)
             canvas.paste(base.convert("RGB"))
         except Exception as e:
-            logger.error(f"Erreur overlay: {e}")
+            logger.error(f"Overlay erreur: {e}")
 
-    def _draw_decoration(self, canvas: Image.Image, dec: dict):
-        """Dessine une décoration définie dans le template (ligne, rectangle…)."""
+    def _draw_decoration(self, canvas, dec: dict):
         draw = ImageDraw.Draw(canvas)
-        dtype = dec.get("type", "line")
         color = tuple(dec.get("color", [0, 0, 0]))
         width = dec.get("width", 2)
-        if dtype == "line":
-            draw.line(
-                [(dec["x1"], dec["y1"]), (dec["x2"], dec["y2"])],
-                fill=color, width=width
-            )
-        elif dtype == "rect":
-            draw.rectangle(
-                [(dec["x"], dec["y"]), (dec["x"] + dec["w"], dec["y"] + dec["h"])],
-                fill=color
-            )
+        if dec.get("type") == "line":
+            draw.line([(dec["x1"], dec["y1"]), (dec["x2"], dec["y2"])], fill=color, width=width)
+        elif dec.get("type") == "rect":
+            draw.rectangle([(dec["x"], dec["y"]), (dec["x"] + dec["w"], dec["y"] + dec["h"])], fill=color)
 
-    def _draw_zone_text(self, canvas: Image.Image, zone: dict,
-                        text: str, font_path: Optional[str]):
-        """Dessine un texte centré dans une zone rectangulaire."""
+    def _draw_zone_text(self, canvas, zone: dict, text: str, font_path: Optional[str]):
         draw = ImageDraw.Draw(canvas)
-        zx, zy = zone["x"], zone["y"]
-        zw, zh = zone["width"], zone["height"]
+        zx, zy, zw, zh = zone["x"], zone["y"], zone["width"], zone["height"]
         size = zone.get("size", 32)
         color = tuple(zone.get("color", [0, 0, 0]))
+        font = self._load_font(font_path, size)
+
+        # Tronquer si trop long
+        display = text
+        while font.getlength(display) > zw - 20 and len(display) > 3:
+            display = display[:-1]
+
+        tw = int(font.getlength(display))
+        bbox = font.getbbox(display)
+        th = bbox[3] - bbox[1]
         align = zone.get("align", "center")
-
-        font = self._load_font(font_path, size)
-
-        # Tronquer si le texte est trop long
-        while font.getlength(text) > zw - 20 and len(text) > 3:
-            text = text[:-1]
-
-        tw = int(font.getlength(text))
-        _, _, _, th = font.getbbox(text)
-
-        if align == "center":
-            tx = zx + (zw - tw) // 2
-        elif align == "right":
-            tx = zx + zw - tw - 10
-        else:
-            tx = zx + 10
-
+        tx = zx + (zw - tw) // 2 if align == "center" else (zx + zw - tw - 10 if align == "right" else zx + 10)
         ty = zy + (zh - th) // 2
-        draw.text((tx, ty), text, fill=color, font=font)
+        draw.text((tx, ty), display, fill=color, font=font)
 
-    def _draw_text(self, canvas: Image.Image, elem: dict, font_path: Optional[str]):
+    def _draw_text(self, canvas, elem: dict, font_path: Optional[str]):
         draw = ImageDraw.Draw(canvas)
-        text = elem.get("text", "")
-        x, y = elem.get("x", 0), elem.get("y", 0)
-        size = elem.get("size", 24)
-        color = tuple(elem.get("color", [0, 0, 0]))
-        font = self._load_font(font_path, size)
-        draw.text((x, y), text, fill=color, font=font)
+        font = self._load_font(font_path, elem.get("size", 24))
+        draw.text((elem.get("x", 0), elem.get("y", 0)),
+                  elem.get("text", ""),
+                  fill=tuple(elem.get("color", [0, 0, 0])),
+                  font=font)
 
-    def _load_font(self, font_path: Optional[str], size: int) -> ImageFont.FreeTypeFont:
+    def _load_font(self, font_path: Optional[str], size: int):
         if font_path and Path(font_path).exists():
             try:
                 return ImageFont.truetype(font_path, size)
             except Exception:
                 pass
-        try:
-            # Essaie les polices système courantes
-            for name in ("DejaVuSans.ttf", "arial.ttf", "LiberationSans-Regular.ttf"):
-                for base in ("/usr/share/fonts/truetype/dejavu/",
-                             "/usr/share/fonts/truetype/liberation/",
-                             "C:/Windows/Fonts/"):
-                    p = Path(base) / name
-                    if p.exists():
+        for name in ("DejaVuSans.ttf", "arial.ttf", "LiberationSans-Regular.ttf"):
+            for base in ("/usr/share/fonts/truetype/dejavu/",
+                         "/usr/share/fonts/truetype/liberation/",
+                         "C:/Windows/Fonts/"):
+                p = Path(base) / name
+                if p.exists():
+                    try:
                         return ImageFont.truetype(str(p), size)
-        except Exception:
-            pass
+                    except Exception:
+                        pass
         return ImageFont.load_default()
 
-    def _compose_auto(self, photo_paths: List[str], output_path: str) -> str:
+    def _compose_auto(self, photo_paths, output_path):
         n = len(photo_paths)
         if n == 0:
-            raise ValueError("Aucune photo à composer")
+            raise ValueError("Aucune photo")
         w = self._config.get("processing.final_width", 1800)
         h = self._config.get("processing.final_height", 1200)
         cols = 2 if n > 1 else 1
         rows = (n + cols - 1) // cols
-        cell_w, cell_h = w // cols, h // rows
-        pad = 15
+        cell_w, cell_h, pad = w // cols, h // rows, 15
         canvas = Image.new("RGB", (w, h), (30, 30, 30))
         for i, path in enumerate(photo_paths):
             col, row = i % cols, i // cols
@@ -232,7 +239,7 @@ class Composer:
                 photo = self._fit_crop(photo, cell_w - pad * 2, cell_h - pad * 2)
                 canvas.paste(photo, (col * cell_w + pad, row * cell_h + pad))
             except Exception as e:
-                logger.error(f"Auto-compose erreur {path}: {e}")
+                logger.error(f"Auto-compose {path}: {e}")
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         canvas.save(output_path, quality=self._config.get("processing.jpeg_quality", 92))
         return output_path
