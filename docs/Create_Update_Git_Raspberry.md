@@ -136,19 +136,55 @@ python src/app.py
 
 ### Installer le service systemd (démarrage automatique au boot)
 
-```bash
-# Vérifier le chemin dans le fichier service
-nano /home/pi/SnapForge/snapforge.service
-# → WorkingDirectory et ExecStart doivent pointer vers /home/pi/SnapForge
+Le fichier `snapforge.service` est inclus dans le dépôt avec le contenu suivant :
 
+```ini
+[Unit]
+Description=SnapForge PhotoBooth
+After=network.target graphical.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+WorkingDirectory=/home/pi/SnapForge
+ExecStart=/home/pi/SnapForge/venv/bin/python src/app.py --config config.yaml
+
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=SDL_VIDEODRIVER=x11
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=snapforge
+
+[Install]
+WantedBy=graphical.target
+```
+
+> Si vous avez cloné le projet ailleurs que dans `/home/pi/SnapForge`, éditez `WorkingDirectory` et `ExecStart` avant de copier :
+> ```bash
+> nano /home/pi/SnapForge/snapforge.service
+> ```
+
+```bash
 # Installer et activer le service
 sudo cp /home/pi/SnapForge/snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable photobooth
-sudo systemctl start photobooth
+sudo systemctl enable snapforge
+sudo systemctl start snapforge
 
 # Vérifier que le service tourne
-sudo systemctl status photobooth
+sudo systemctl status snapforge
+
+# Voir les logs en direct
+journalctl -u snapforge -f
 ```
 
 ---
@@ -165,7 +201,7 @@ ssh pi@ADRESSE_IP_DU_PI
 cd /home/pi/SnapForge
 
 # Arrêter le service si actif
-sudo systemctl stop photobooth
+sudo systemctl stop snapforge
 
 # Récupérer les dernières modifications depuis GitHub
 git pull
@@ -175,11 +211,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Redémarrer le service
-sudo systemctl start photobooth
+sudo systemctl start snapforge
 
 # Vérifier
-sudo systemctl status photobooth
-journalctl -u photobooth -n 30
+sudo systemctl status snapforge
+journalctl -u snapforge -n 30
 ```
 
 ### Script de mise à jour rapide (optionnel)
@@ -191,16 +227,16 @@ Créez un fichier `/home/pi/SnapForge/update.sh` :
 set -e
 cd /home/pi/SnapForge
 echo "Arrêt du service..."
-sudo systemctl stop photobooth
+sudo systemctl stop snapforge
 echo "Récupération des mises à jour..."
 git pull
 echo "Mise à jour des dépendances..."
 source venv/bin/activate
 pip install -r requirements.txt --quiet
 echo "Redémarrage..."
-sudo systemctl start photobooth
+sudo systemctl start snapforge
 echo "Mise à jour terminée."
-sudo systemctl status photobooth --no-pager
+sudo systemctl status snapforge --no-pager
 ```
 
 Rendez-le exécutable :

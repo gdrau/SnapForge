@@ -96,12 +96,12 @@ nano snapforge.service
 
 sudo cp snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable photobooth
-sudo systemctl start photobooth
+sudo systemctl enable snapforge
+sudo systemctl start snapforge
 
 # Vérifier
-sudo systemctl status photobooth
-journalctl -u photobooth -n 50
+sudo systemctl status snapforge
+journalctl -u snapforge -n 50
 ```
 
 ## 6. Démarrage automatique sur Pi sans bureau (optionnel)
@@ -124,7 +124,7 @@ Environment=SDL_FBDEV=/dev/fb0
 # Serveur web simple pour accéder aux photos depuis smartphone
 sudo apt install nginx
 
-sudo nano /etc/nginx/sites-available/photobooth
+sudo nano /etc/nginx/sites-available/snapforge
 ```
 
 ```nginx
@@ -132,14 +132,14 @@ server {
     listen 80;
     server_name _;
     location /photos {
-        alias /home/pi/SnapForge/photos/final;
+        alias /home/pi/SnapForge/Photo/final;
         autoindex on;
     }
 }
 ```
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/photobooth /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/snapforge /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
@@ -186,5 +186,5 @@ cd /home/pi/SnapForge
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
-sudo systemctl restart photobooth
+sudo systemctl restart snapforge
 ```

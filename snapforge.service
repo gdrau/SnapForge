@@ -1,0 +1,32 @@
+[Unit]
+Description=SnapForge PhotoBooth
+After=network.target graphical.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# Répertoire de travail = racine du projet cloné
+WorkingDirectory=/home/pi/SnapForge
+
+# Lancement via l'environnement virtuel Python
+ExecStart=/home/pi/SnapForge/venv/bin/python src/app.py --config config.yaml
+
+# Variables d'environnement nécessaires à Pygame sur X11
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=SDL_VIDEODRIVER=x11
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+Restart=on-failure
+RestartSec=5
+
+# Journalisation (lisible via : journalctl -u snapforge -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=snapforge
+
+[Install]
+WantedBy=graphical.target

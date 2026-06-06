@@ -121,14 +121,14 @@ python src/app.py --windowed
 # Installation
 sudo cp snapforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable photobooth
-sudo systemctl start photobooth
+sudo systemctl enable snapforge
+sudo systemctl start snapforge
 
 # Vérification
-sudo systemctl status photobooth
-journalctl -u photobooth -f
+sudo systemctl status snapforge
+journalctl -u snapforge -f
 
 # Arrêt / redémarrage
-sudo systemctl stop photobooth
-sudo systemctl restart photobooth
+sudo systemctl stop snapforge
+sudo systemctl restart snapforge
 ```
