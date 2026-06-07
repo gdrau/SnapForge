@@ -7,7 +7,8 @@ from typing import Callable, List, Optional
 import numpy as np
 import pygame
 
-from ui.carousel import CarouselManager
+from ui.carousel       import CarouselManager
+from ui.layout_manager import LayoutManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,11 @@ _GRAY   = (100, 110, 120)
 _LGRAY  = (190, 200, 210)
 _DISABLED = (70, 78, 88)
 
-ROW_H = 54       # hauteur d'une ligne de menu
-HDR_H = 52       # hauteur de l'en-tête admin
-BTN_H = 52       # hauteur du bouton Sauvegarder/Annuler
+# Ces constantes sont désormais des propriétés dynamiques calculées par LayoutManager.
+# Valeurs par défaut (480×800) conservées pour compatibilité pendant la migration.
+ROW_H = 54
+HDR_H = 52
+BTN_H = 52
 
 
 class _Btn:
@@ -100,37 +103,39 @@ class _NavBtn(_Btn):
 class PygameUI:
 
     def __init__(self, config):
-        self._w = config.get("app.width", 800)
-        self._h = config.get("app.height", 480)
-        self._fps = config.get("app.fps", 30)
-        self._fullscreen = config.get("app.fullscreen", True)
-        self._font_path = config.get("app.font_path")
-        self._qr_size = config.get("qr.size", 300)
+        # Dimensions de configuration (définissent l'orientation)
+        self._config_w    = config.get("app.width", 800)
+        self._config_h    = config.get("app.height", 480)
+        self._w           = self._config_w
+        self._h           = self._config_h
+        self._fps         = config.get("app.fps", 30)
+        self._fullscreen  = config.get("app.fullscreen", True)
+        self._font_path   = config.get("app.font_path")
+        self._qr_size     = config.get("qr.size", 300)
 
         self._callback: Optional[Callable] = None
         self._screen = None
-        self._clock = None
+        self._clock  = None
         self._running = False
 
-        # Écran courant
         self._screen_name = "idle"
         self._buttons: List[_Btn] = []
         self._info: dict = {}
         self._preview_frame = None
-        self._preview_lock = threading.Lock()
+        self._preview_lock  = threading.Lock()
 
-        # Admin
-        self._admin_page = "main"
+        self._admin_page            = "main"
         self._admin_stack: List[str] = []
-        self._admin_scroll = 0
+        self._admin_scroll           = 0
         self._admin_scroll_cache: dict = {}
-        self._admin_selection: int = 0
+        self._admin_selection: int   = 0
         self._admin_selection_cache: dict = {}
         self._text_editing: Optional[str] = None
 
         self._fonts: dict = {}
+        self._lm: Optional[LayoutManager] = None   # initialisé dans _init_pygame
         self._init_pygame()
-        # Carrousel photos sur l'écran d'accueil (init après pygame pour surfaces)
+        # Carrousel (init après pygame pour les surfaces)
         self._carousel = CarouselManager(config)
 
     @property
@@ -145,15 +150,63 @@ class PygameUI:
     def _init_pygame(self):
         pygame.init()
         pygame.mouse.set_visible(not self._fullscreen)
-        flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF if self._fullscreen else 0
-        self._screen = pygame.display.set_mode((self._w, self._h), flags)
-        pygame.display.set_caption("PhotoBooth")
+
+        if self._fullscreen:
+            # En fullscreen : utiliser la résolution RÉELLE de l'écran
+            info = pygame.display.Info()
+            screen_w = info.current_w if info.current_w > 0 else self._config_w
+            screen_h = info.current_h if info.current_h > 0 else self._config_h
+
+            # Respecter l'orientation configurée même si l'OS rapporte l'inverse
+            config_portrait = self._config_h > self._config_w
+            actual_portrait  = screen_h > screen_w
+            if config_portrait != actual_portrait:
+                screen_w, screen_h = screen_h, screen_w   # corriger l'orientation
+
+            flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
+            self._screen = pygame.display.set_mode((screen_w, screen_h), flags)
+        else:
+            self._screen = pygame.display.set_mode((self._w, self._h))
+
+        # Dimensions effectives après initialisation (peuvent différer de la config)
+        self._w, self._h = self._screen.get_size()
+
+        # Calcul du scale factor pour le log
+        sf_w = self._w / self._config_w if self._config_w else 1.0
+        sf_h = self._h / self._config_h if self._config_h else 1.0
+        scale_factor = round(min(sf_w, sf_h), 2)
+        orient = "portrait" if self._h > self._w else "paysage"
+
+        logger.info(f"Resolution config  : {self._config_w}x{self._config_h}")
+        logger.info(f"Resolution ecran   : {self._w}x{self._h}")
+        logger.info(f"Orientation        : {orient}")
+        logger.info(f"Scale factor       : {scale_factor}")
+
+        pygame.display.set_caption("SnapForge")
         self._clock = pygame.time.Clock()
+
+        # Layout Manager : toutes les dimensions proportionnelles
+        self._lm = LayoutManager(self._w, self._h)
+        # Mettre à jour les constantes module ROW_H/HDR_H/BTN_H
+        global ROW_H, HDR_H, BTN_H
+        ROW_H = self._lm.row_h
+        HDR_H = self._lm.hdr_h
+        BTN_H = self._lm.btn_h
+
         self._load_fonts()
-        logger.info(f"Pygame UI : {self._w}x{self._h} fullscreen={self._fullscreen}")
+        logger.info(f"LayoutManager      : {self._lm}")
 
     def _load_fonts(self):
-        specs = {"xs": 18, "sm": 22, "md": 30, "lg": 48, "xl": 72, "xxl": 120}
+        """Charge les polices avec des tailles proportionnelles depuis LayoutManager."""
+        lm = self._lm
+        specs = {
+            "xs":  lm.font_xs,
+            "sm":  lm.font_sm,
+            "md":  lm.font_md,
+            "lg":  lm.font_lg,
+            "xl":  lm.font_xl,
+            "xxl": lm.font_xxl,
+        }
         for name, size in specs.items():
             try:
                 if self._font_path and Path(self._font_path).exists():
@@ -314,19 +367,26 @@ class PygameUI:
         self._info = {"msg": str(message)}
 
     def show_confirm_quit(self):
-        """Affiche la boîte de dialogue de confirmation de fermeture."""
+        """
+        Dialogue de confirmation de fermeture.
+        NE PAS effacer self._info — contient les settings admin pour le retour.
+        """
         self._screen_name = "confirm_quit"
-        box_w = min(400, self._w - 40)
-        bx = (self._w - box_w) // 2
-        box_y = self._h // 2 - 80
-        half = (box_w - 10) // 2
+        lm    = self._lm
+        box_w = min(int(self._w * 0.85), int(lm.font_md * 22))
+        bx    = (self._w - box_w) // 2
+        box_y = self._h // 2 - int(self._h * 0.10)
+        gap   = max(8, lm.gap_sm)
+        half  = (box_w - gap) // 2
+        bh    = lm.btn_h
+        by    = box_y + int(self._h * 0.15)
         self._buttons = [
-            _Btn((bx, box_y + 110, half, 52), "Oui, quitter", _RED,
-                 font=self._fonts["sm"], action="quit_app", radius=8),
-            _Btn((bx + half + 10, box_y + 110, half, 52), "Annuler", _GRAY,
+            _Btn((bx,            by, half, bh), "Oui, quitter", _RED,
+                 font=self._fonts["sm"], action="quit_app",    radius=8),
+            _Btn((bx+half+gap,   by, half, bh), "Annuler",     _GRAY,
                  font=self._fonts["sm"], action="cancel_quit", radius=8),
         ]
-        self._info = {}
+        # self._info est CONSERVÉ (settings admin disponibles pour cancel_quit)
 
     # ------------------------------------------------------------------
     # Admin
@@ -533,6 +593,9 @@ class PygameUI:
                 if event.type == pygame.KEYDOWN:
                     if self._screen_name == "admin":
                         if self._handle_admin_key(event):
+                            continue
+                    elif self._screen_name == "confirm_quit":
+                        if self._handle_confirm_quit_key(event):
                             continue
                     self._on_key(event)
                     continue
@@ -782,6 +845,22 @@ class PygameUI:
     def stop(self):
         self._running = False
 
+    def _handle_confirm_quit_key(self, event) -> bool:
+        """
+        Gère le clavier sur l'écran de confirmation de fermeture.
+        Entrée/O/Y = confirmer  |  Échap/N/Annuler = annuler
+        """
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER,
+                         pygame.K_y, pygame.K_o):
+            self._emit("quit_app")
+            return True
+        if event.key in (pygame.K_ESCAPE, pygame.K_n):
+            settings = self._info.get("settings", {})
+            self._screen_name = "admin"
+            self._build_admin(settings)
+            return True
+        return True   # consomme toutes les touches en mode confirmation
+
     def _on_key(self, event):
         if event.key == pygame.K_ESCAPE:
             if self._screen_name == "confirm_quit":
@@ -832,62 +911,57 @@ class PygameUI:
         pygame.display.flip()
 
     def _r_idle(self):
+        """Écran d'accueil — toutes les positions via LayoutManager."""
         self._screen.fill(_DARK)
-        name        = self._info.get("booth_name", "SnapForge")
+        lm           = self._lm
+        name         = self._info.get("booth_name", "SnapForge")
         has_carousel = self._carousel.enabled and self._carousel.has_photos()
 
-        # --- Positions titre / sous-titre selon orientation et carrousel ---
-        if has_carousel and self._is_portrait:
-            title_y    = int(self._h * 0.30)
-            subtitle_y = int(self._h * 0.40)
-        elif has_carousel:
-            title_y    = int(self._h * 0.18)
-            subtitle_y = int(self._h * 0.30)
-        else:
-            title_y    = self._h // 3
-            subtitle_y = self._h // 2
+        # --- Positions proportionnelles depuis LayoutManager ---
+        title_y    = lm.px(lm.idle_title_y)
+        subtitle_y = lm.px(lm.idle_subtitle_y)
+        btn_cy     = lm.px(lm.idle_btn_y)
 
-        # Titre événement (police auto-ajustée)
-        font = self._best_font_for(name, self._w - 40)
+        # Titre événement (police auto-ajustée pour ne pas déborder)
+        font = self._best_font_for(name, self._w - lm.margin * 2)
         ts   = font.render(name, True, _WHITE)
         self._screen.blit(ts, ts.get_rect(center=(self._w // 2, title_y)))
 
         # Sous-titre
         self._txt("Bienvenue !", "md", _GRAY, self._w // 2, subtitle_y, cx=True)
 
-        # --- Zone carrousel (explicitement bornée au-dessus du bouton) ---
-        # Hauteur approximative du bouton APPUYEZ POUR COMMENCER
-        btn_cy      = self._h - 60 if self._is_portrait else self._h - 80
-        btn_h_est   = self._fonts["md"].get_height() + 44
+        # --- Zone carrousel bornée au-dessus du bouton ---
+        btn_h_est   = lm.btn_h
         btn_top     = btn_cy - btn_h_est // 2
-        SAFE_MARGIN = 24   # px de marge au-dessus du bouton
+        safe_margin = max(16, int(self._h * 0.03))
 
-        zone_x = 20
-        zone_w = self._w - 40
-        zone_y = subtitle_y + 45
-        # Bottom = btn_top - safe_margin (jamais au-dessous)
-        zone_bot = btn_top - SAFE_MARGIN
-        # Cap de hauteur selon orientation (évite les zones trop grandes)
-        MAX_H = 270 if self._is_portrait else 170
-        zone_h = min(MAX_H, max(60, zone_bot - zone_y))
+        zone_x   = lm.margin
+        zone_w   = self._w - lm.margin * 2
+        zone_y   = subtitle_y + lm.gap_md + lm.gap_sm
+        zone_bot = btn_top - safe_margin
+        # Hauteur max = ratio LayoutManager (35 % de h environ)
+        max_h    = lm.px(lm.idle_carousel_max_h)
+        zone_h   = min(max_h, max(60, zone_bot - zone_y))
 
         if has_carousel and zone_h >= 60:
             self._carousel.update()
-            # Ombres en premier, photos au-dessus
+            shadow_off = lm.carousel_shadow_offset
             items = self._carousel.get_render_items(
                 zone_x, zone_y, zone_w, zone_h, self._is_portrait
             )
-            for _photo, shadow, x, y in items:
-                self._screen.blit(shadow, (x + 5, y + 5))
-            for photo, _shadow, x, y in items:
+            for _ph, shadow, x, y in items:
+                self._screen.blit(shadow, (x + shadow_off, y + shadow_off))
+            for photo, _sh, x, y in items:
                 self._screen.blit(photo, (x, y))
         else:
             # Animation points (aucune photo encore)
-            t  = int(time.time() * 2) % 3
-            dy = zone_y + zone_h // 2
+            t      = int(time.time() * 2) % 3
+            dy     = zone_y + zone_h // 2
+            dot_r  = max(5, int(lm.font_xs * 0.35))
+            dot_sp = dot_r * 3
             for i in range(3):
                 pygame.draw.circle(self._screen, _ACCENT if i == t else _GRAY,
-                                   (self._w // 2 - 20 + i * 20, dy), 7)
+                                   (self._w // 2 - dot_sp + i * dot_sp, dy), dot_r)
 
     def _r_choose(self):
         self._screen.fill(_DARK)
@@ -1049,18 +1123,22 @@ class PygameUI:
         self._txt("Retour automatique...", "xs", _GRAY, self._w // 2, self._h * 2 // 3, cx=True)
 
     def _r_confirm_quit(self):
-        """Dialogue de confirmation de fermeture."""
+        """Dialogue de confirmation — dimensions calculées via LayoutManager."""
         self._screen.fill(_DARK)
-        box_w = min(400, self._w - 40)
-        box_h = 180
+        lm    = self._lm
+        box_w = min(int(self._w * 0.85), int(lm.font_md * 22))
+        box_h = int(self._h * 0.28)
         box_x = (self._w - box_w) // 2
         box_y = self._h // 2 - box_h // 2
-        pygame.draw.rect(self._screen, _DARK2, (box_x, box_y, box_w, box_h), border_radius=16)
-        pygame.draw.rect(self._screen, _RED,   (box_x, box_y, box_w, box_h), 2, border_radius=16)
+        radius = max(10, int(lm.font_xs * 0.7))
+        pygame.draw.rect(self._screen, _DARK2, (box_x, box_y, box_w, box_h), border_radius=radius)
+        pygame.draw.rect(self._screen, _RED,   (box_x, box_y, box_w, box_h), 2, border_radius=radius)
         self._txt("Quitter SnapForge ?", "md", _WHITE,
-                   self._w // 2, box_y + 40, cx=True)
+                   self._w // 2, box_y + int(box_h * 0.28), cx=True)
         self._txt("L'application va se fermer.", "xs", _GRAY,
-                   self._w // 2, box_y + 80, cx=True)
+                   self._w // 2, box_y + int(box_h * 0.50), cx=True)
+        self._txt("Entree = confirmer   Echap = annuler", "xs", _DISABLED,
+                   self._w // 2, box_y + int(box_h * 0.68), cx=True)
 
     # ------------------------------------------------------------------
     # Rendu admin
@@ -1069,12 +1147,12 @@ class PygameUI:
     def _r_admin(self):
         self._screen.fill(_DARK)
         settings = self._info.get("settings", {})
-        items = self._info.get("items", [])
-        scroll = self._admin_scroll
-        margin = 28
-        panel_w = self._w - 2 * margin
-        val_w = 200
-        val_x = margin + panel_w - val_w
+        items    = self._info.get("items", [])
+        scroll   = self._admin_scroll
+        margin   = self._lm.margin
+        panel_w  = self._w - 2 * margin
+        val_w    = self._lm.val_w
+        val_x    = margin + panel_w - val_w
 
         # --- Zone scrollable (s'arrête avant le bouton fixe du bas) ---
         bottom_res  = self._admin_bottom_reserved()
