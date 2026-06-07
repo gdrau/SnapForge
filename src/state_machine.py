@@ -157,6 +157,9 @@ class StateMachine:
         for i in range(self._countdown_s, 0, -1):
             self._ui.show_countdown(i)
             time.sleep(1)
+        # "Souriez !" pendant 700ms avant le déclenchement
+        self._ui.show_smile()
+        time.sleep(0.7)
         self._go(State.CAPTURE)
 
     def _enter_capture(self):

@@ -37,23 +37,34 @@ class _Btn:
     fixed = False   # True = position absolue, non affectée par le scroll admin
 
     def __init__(self, rect, text, color, text_color=_WHITE, font=None,
-                 action=None, data=None, radius=10, no_draw=False):
-        self.rect = pygame.Rect(rect)
-        self.text = text
-        self.color = color
+                 action=None, data=None, radius=10, no_draw=False, selected=False):
+        self.rect     = pygame.Rect(rect)
+        self.text     = text
+        self.color    = color
         self.text_color = text_color
-        self.font = font
-        self.action = action
-        self.data = data
-        self.radius = radius
-        self.no_draw = no_draw   # True = zone de clic invisible (rendu géré ailleurs)
-        self._hover = False
+        self.font     = font
+        self.action   = action
+        self.data     = data
+        self.radius   = radius
+        self.no_draw  = no_draw
+        self.selected = selected   # True = sélectionné par le clavier
+        self._hover   = False
 
     def draw(self, surf):
         if self.no_draw:
             return
-        c = tuple(min(v + 25, 255) for v in self.color) if self._hover else self.color
+        if self._hover:
+            c = tuple(min(v + 25, 255) for v in self.color)
+        elif self.selected:
+            # Fond plus lumineux quand sélectionné au clavier
+            c = tuple(min(v + 60, 255) for v in self.color)
+        else:
+            c = self.color
         pygame.draw.rect(surf, c, self.rect, border_radius=self.radius)
+        # Contour blanc quand sélectionné au clavier
+        if self.selected:
+            pygame.draw.rect(surf, _WHITE, self.rect,
+                             max(2, self.rect.height // 16), border_radius=self.radius)
         if self.font and self.text:
             text = str(self.text)
             max_w = self.rect.width - 12
@@ -326,12 +337,20 @@ class PygameUI:
 
     def show_countdown(self, value: int):
         self._info["countdown"] = value
+        self._info["smile"]     = False
+        self._buttons = []
+
+    def show_smile(self):
+        """Affiche 'Souriez !' juste avant le déclenchement de la capture."""
+        self._info["countdown"] = 0
+        self._info["smile"]     = True
         self._buttons = []
 
     def show_capture_result(self, path: str, remaining: int):
         self._info["last_photo"] = path
-        self._info["remaining"] = remaining
-        self._info["countdown"] = 0
+        self._info["remaining"]  = remaining
+        self._info["countdown"]  = 0
+        self._info["smile"]      = False
 
     def show_processing(self, step: str):
         self._screen_name = "processing"
@@ -507,8 +526,9 @@ class PygameUI:
         btns: List[_Btn] = []
         y = HDR_H + 8
 
-        for item in items:
-            itype = item.get("type")
+        for item_idx, item in enumerate(items):
+            itype  = item.get("type")
+            is_sel = (item_idx == self._admin_selection) and not self._text_editing
 
             if itype == "sep":
                 y += 12
@@ -519,7 +539,6 @@ class PygameUI:
                 continue
 
             if itype == "nav":
-                # _NavBtn dessine lui-même le fond ET le texte — pas d'overdraw
                 btns.append(_NavBtn(
                     (margin, y, panel_w, ROW_H - 4),
                     item["label"], item.get("desc", ""),
@@ -530,9 +549,11 @@ class PygameUI:
                 continue
 
             if itype == "action":
+                # selected=is_sel → fond + contour blanc quand curseur sur ce bouton
                 btns.append(_Btn(
                     (margin, y, panel_w, ROW_H - 4), item["label"], item["color"],
                     font=self._fonts["sm"], action=item["action"], data=None, radius=8,
+                    selected=is_sel,
                 ))
                 y += ROW_H
                 continue
@@ -1003,8 +1024,13 @@ class PygameUI:
         total = self._info.get("total", 0)
         self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
-        cd = self._info.get("countdown", 0)
-        if cd > 0:
+        cd    = self._info.get("countdown", 0)
+        smile = self._info.get("smile", False)
+        if smile:
+            # Message "Souriez !" juste avant le déclenchement
+            self._shadow_txt("Souriez !", "xl", _ACCENT,
+                             self._w // 2, self._h // 2, cx=True)
+        elif cd > 0:
             self._shadow_txt(str(cd), "xxl", _WHITE, self._w // 2, self._h // 2, cx=True)
 
     def _r_processing(self):
@@ -1035,100 +1061,68 @@ class PygameUI:
             self._txt(self._info["status"], "sm", _ACCENT, self._w // 2, self._h - 90, cx=True)
 
     def _r_qr(self):
+        """
+        Écran résultat — approche unifiée portrait/paysage :
+        La photo occupe tout l'espace disponible (minus bouton bas).
+        Le QR code est overlayé dans le coin supérieur droit de la photo.
+        Toujours visible, jamais hors-écran.
+        """
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
         qr    = self._info.get("qr")
-        btn_area = self._lm.btn_h + self._lm.gap_md   # proportionnel à la résolution
+        lm    = self._lm
 
-        if self._is_portrait:
-            # ----------------------------------------------------------------
-            # Portrait — layout dynamique avec centrage vertical du bloc complet
-            # [ marge ] [ photo ] [ gap ] [ QR ] [ texte ] [ espace ] [ bouton ]
-            # ----------------------------------------------------------------
-            MARGIN_TOP  = 16
-            MARGIN_BOT  = 66    # espace réservé pour le bouton RETOUR ACCUEIL
-            GAP_INNER   = 14    # entre photo et QR
-            GAP_TEXT    = 8     # entre QR et texte "Scannez…"
-            TEXT_H      = 22
-            QR_MAX      = int(self._w * 0.46)   # QR ≤ 46 % de la largeur
+        # Zone disponible au-dessus du bouton
+        btn_cy  = self._h - lm.btn_h // 2 - lm.gap_md
+        avail_h = btn_cy - lm.btn_h // 2 - lm.gap_sm
+        avail_w = self._w
 
-            qr_size = min(self._qr_size, QR_MAX)
-            zone_h  = self._h - MARGIN_TOP - MARGIN_BOT  # zone utile
+        # Charger et afficher la photo (centrée, maximale dans la zone)
+        photo_rect = None
+        if photo and Path(photo).exists():
+            try:
+                img = pygame.image.load(photo)
+                iw, ih = img.get_size()
+                scale = min(avail_w / iw, avail_h / ih)
+                nw, nh = int(iw * scale), int(ih * scale)
+                img = pygame.transform.scale(img, (nw, nh))
+                px = (avail_w - nw) // 2
+                py = (avail_h - nh) // 2
+                self._screen.blit(img, (px, py))
+                photo_rect = pygame.Rect(px, py, nw, nh)
+            except Exception as e:
+                logger.error(f"QR photo: {e}")
 
-            # Hauteur max allouée à la photo
-            # (zone - QR - gaps - texte, avec un minimum de 100 px)
-            photo_max_h = max(100, zone_h - qr_size - GAP_INNER - GAP_TEXT - TEXT_H)
-            photo_max_w = self._w - 20
+        # QR Code en overlay : coin supérieur droit de la photo
+        if qr is not None and photo_rect is not None:
+            try:
+                pil    = qr.convert("RGB")
+                # Taille = 22 % du côté le plus court de la photo
+                qr_sz  = max(60, int(min(photo_rect.width, photo_rect.height) * 0.22))
+                qsurf  = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
+                qsurf  = pygame.transform.smoothscale(qsurf, (qr_sz, qr_sz))
+                mg     = max(6, int(qr_sz * 0.06))  # marge intérieure
+                qx     = photo_rect.right - qr_sz - mg
+                qy     = photo_rect.top   + mg
 
-            # Charger et redimensionner la photo
-            photo_surf, nw, nh = None, 0, 0
-            if photo and Path(photo).exists():
-                try:
-                    img = pygame.image.load(photo)
-                    iw, ih = img.get_size()
-                    scale = min(photo_max_w / iw, photo_max_h / ih)
-                    nw, nh = int(iw * scale), int(ih * scale)
-                    photo_surf = pygame.transform.scale(img, (nw, nh))
-                except Exception:
-                    pass
+                # Fond blanc semi-transparent pour lisibilité maximale
+                bg = pygame.Surface((qr_sz + 6, qr_sz + 6))
+                bg.fill(_WHITE)
+                bg.set_alpha(230)
+                self._screen.blit(bg, (qx - 3, qy - 3))
+                self._screen.blit(qsurf, (qx, qy))
 
-            # Hauteur totale du bloc (photo + QR + texte)
-            has_qr      = qr is not None
-            block_h     = nh + (GAP_INNER + qr_size + GAP_TEXT + TEXT_H if has_qr else 0)
+                # Mini texte sous le QR (si assez de place dans la photo)
+                txt_y = qy + qr_sz + max(3, lm.gap_sm // 2)
+                if txt_y + lm.font_xs < photo_rect.bottom - 4:
+                    self._txt("Scannez !", "xs", _LGRAY,
+                              qx + qr_sz // 2, txt_y, cx=True)
+            except Exception as e:
+                logger.error(f"QR overlay: {e}")
 
-            # Centrage vertical du bloc dans la zone utile
-            start_y = MARGIN_TOP + max(0, (zone_h - block_h) // 2)
-
-            # Afficher la photo
-            if photo_surf:
-                self._screen.blit(photo_surf, ((self._w - nw) // 2, start_y))
-
-            # Afficher le QR juste sous la photo
-            qr_y = start_y + nh + GAP_INNER
-            if has_qr:
-                try:
-                    pil   = qr.convert("RGB")
-                    qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
-                    qsurf = pygame.transform.scale(qsurf, (qr_size, qr_size))
-                    qx    = (self._w - qr_size) // 2
-                    self._screen.blit(qsurf, (qx, qr_y))
-                    self._txt("Scannez pour telecharger", "xs", _LGRAY,
-                              self._w // 2, qr_y + qr_size + GAP_TEXT, cx=True)
-                except Exception as e:
-                    logger.error(f"QR: {e}")
-            else:
-                self._txt("Photo enregistree !", "md", _LGRAY,
-                          self._w // 2, qr_y + 40, cx=True)
-
-        else:
-            # Paysage : photo à gauche, QR à droite
-            available_h = self._h - btn_area - 20
-            if photo and Path(photo).exists():
-                try:
-                    img = pygame.image.load(photo)
-                    iw, ih = img.get_size()
-                    scale = min((self._w // 2 - 30) / iw, available_h / ih)
-                    nw, nh = int(iw * scale), int(ih * scale)
-                    img = pygame.transform.scale(img, (nw, nh))
-                    self._screen.blit(img, (15, (available_h - nh) // 2 + 10))
-                except Exception:
-                    pass
-
-            if qr is not None:
-                try:
-                    pil = qr.convert("RGB")
-                    qsurf = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
-                    sz = self._qr_size
-                    qsurf = pygame.transform.scale(qsurf, (sz, sz))
-                    qx = self._w - sz - 15
-                    qy = (self._h - sz) // 2 - 20
-                    self._screen.blit(qsurf, (qx, qy))
-                    self._txt("Scannez pour", "xs", _LGRAY, qx + sz//2, qy + sz + 8, cx=True)
-                    self._txt("telecharger",  "xs", _LGRAY, qx + sz//2, qy + sz + 24, cx=True)
-                except Exception as e:
-                    logger.error(f"QR: {e}")
-            else:
-                self._txt("Photo enregistree !", "md", _LGRAY, self._w * 3//4, self._h//2, cx=True)
+        elif photo_rect is None:
+            self._txt("Photo enregistree !", "md", _LGRAY,
+                      self._w // 2, avail_h // 2, cx=True)
 
     def _r_error(self):
         self._screen.fill((50, 15, 15))

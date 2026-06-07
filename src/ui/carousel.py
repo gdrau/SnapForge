@@ -47,14 +47,22 @@ _TABLE_L = {
     5: [(0.10, 0.50, -8.0, 0.90), (0.28, 0.50, -4.0, 0.96),
         (0.50, 0.50,  0.0, 1.00), (0.72, 0.50,  4.0, 0.96),
         (0.90, 0.50,  8.0, 0.90)],
+    6: [(0.08, 0.50, -8.0, 0.87), (0.24, 0.50, -4.0, 0.93),
+        (0.40, 0.50, -1.0, 0.98), (0.60, 0.50,  1.0, 0.98),
+        (0.76, 0.50,  4.0, 0.93), (0.92, 0.50,  8.0, 0.87)],
 }
 
-# Portrait : 2 côte à côte, ou 2+1 décalé
+# Portrait : 2 côte à côte, ou 2×2, ou 2×2+1
 _TABLE_P = {
     1: [(0.50, 0.50,  0.0, 1.00)],
     2: [(0.27, 0.50, -4.0, 1.00), (0.73, 0.50,  3.0, 1.00)],
     3: [(0.24, 0.36, -4.0, 0.96), (0.76, 0.36,  3.0, 0.96),
         (0.50, 0.72, -1.0, 0.92)],
+    4: [(0.24, 0.28, -4.0, 0.93), (0.76, 0.28,  3.0, 0.93),
+        (0.24, 0.72, -3.0, 0.93), (0.76, 0.72,  4.0, 0.93)],
+    5: [(0.24, 0.25, -4.0, 0.90), (0.76, 0.25,  3.0, 0.90),
+        (0.24, 0.68, -3.0, 0.90), (0.76, 0.68,  4.0, 0.90),
+        (0.50, 0.47,  0.0, 0.86)],
 }
 
 
@@ -119,10 +127,10 @@ class CarouselManager:
             if not self._thumbs:
                 return []
 
-            # Nombre max de photos selon l'orientation
-            max_n = 3 if is_portrait else int(
-                self._config.get("home_carousel.max_photos_displayed", 5))
-            n   = min(max_n, len(self._thumbs))
+            # Nombre max : portrait ≤5, paysage ≤6 (configurable via admin)
+            cfg_max = int(self._config.get("home_carousel.max_photos_displayed", 6))
+            max_n   = min(5 if is_portrait else 6, cfg_max)
+            n       = min(max_n, len(self._thumbs))
             key = (self._offset, self.mode, n, zw, zh, is_portrait)
 
             if self._cache_key == key and self._cache_items:
@@ -246,15 +254,15 @@ class CarouselManager:
         if is_portrait:
             # BOÎTE CARRÉE : même côté S pour portrait ET paysage
             # → les photos ont la même dimension apparente quelle que soit leur orientation
-            S_ratio = 0.38 if n <= 2 else 0.28
-            S = max(70, min(int(zw * S_ratio), int(zh * 0.80)))
+            S_ratio = 0.42 if n <= 2 else (0.33 if n <= 4 else 0.26)
+            S = max(75, min(int(zw * S_ratio), int(zh * 0.82)))
             box_w, box_h = S, S
             max_rot = 5.0
             table   = _TABLE_P.get(n, _TABLE_P[min(n, 3)])
         else:
             # Boîte carrée pour la zone paysage
-            S_ratio = 0.20 if n <= 3 else 0.16
-            S = max(55, min(int(zw * S_ratio), int(zh * 0.75)))
+            S_ratio = 0.22 if n <= 3 else (0.17 if n <= 5 else 0.14)
+            S = max(60, min(int(zw * S_ratio), int(zh * 0.78)))
             box_w, box_h = S, S
             max_rot = 8.0
             table   = _TABLE_L.get(n, _TABLE_L[min(n, 5)])
