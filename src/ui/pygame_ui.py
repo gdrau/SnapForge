@@ -159,46 +159,45 @@ class PygameUI:
     # ------------------------------------------------------------------
 
     def _init_pygame(self):
+        """
+        Stratégie fullscreen :
+        On utilise TOUJOURS la résolution CONFIGURÉE (config_w × config_h).
+        Le Pi/OS se charge du scaling vers l'écran physique.
+        Cela garantit que l'interface est identique quelle que soit la résolution native.
+        """
         pygame.init()
         pygame.mouse.set_visible(not self._fullscreen)
 
-        if self._fullscreen:
-            # En fullscreen : utiliser la résolution RÉELLE de l'écran
-            info = pygame.display.Info()
-            screen_w = info.current_w if info.current_w > 0 else self._config_w
-            screen_h = info.current_h if info.current_h > 0 else self._config_h
+        flags = (pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
+                 if self._fullscreen else 0)
+        # Toujours utiliser la résolution configurée (480×800, 800×480, etc.)
+        self._screen = pygame.display.set_mode((self._config_w, self._config_h), flags)
 
-            # Respecter l'orientation configurée même si l'OS rapporte l'inverse
-            config_portrait = self._config_h > self._config_w
-            actual_portrait  = screen_h > screen_w
-            if config_portrait != actual_portrait:
-                screen_w, screen_h = screen_h, screen_w   # corriger l'orientation
-
-            flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-            self._screen = pygame.display.set_mode((screen_w, screen_h), flags)
-        else:
-            self._screen = pygame.display.set_mode((self._w, self._h))
-
-        # Dimensions effectives après initialisation (peuvent différer de la config)
+        # Dimensions effectives (normalement = config, sauf si mode non supporté)
         self._w, self._h = self._screen.get_size()
 
-        # Calcul du scale factor pour le log
-        sf_w = self._w / self._config_w if self._config_w else 1.0
-        sf_h = self._h / self._config_h if self._config_h else 1.0
-        scale_factor = round(min(sf_w, sf_h), 2)
-        orient = "portrait" if self._h > self._w else "paysage"
+        # Log diagnostic
+        info = pygame.display.Info()
+        native_w = info.current_w if info.current_w > 0 else "?"
+        native_h = info.current_h if info.current_h > 0 else "?"
+        orient    = "portrait" if self._h > self._w else "paysage"
 
         logger.info(f"Resolution config  : {self._config_w}x{self._config_h}")
-        logger.info(f"Resolution ecran   : {self._w}x{self._h}")
+        logger.info(f"Resolution rendu   : {self._w}x{self._h}")
+        logger.info(f"Resolution native  : {native_w}x{native_h}")
         logger.info(f"Orientation        : {orient}")
-        logger.info(f"Scale factor       : {scale_factor}")
+        if self._w != self._config_w or self._h != self._config_h:
+            logger.warning(
+                f"ATTENTION : resolution rendu ({self._w}x{self._h}) "
+                f"≠ config ({self._config_w}x{self._config_h}). "
+                f"Verifier que le mode est supporte par l'ecran."
+            )
 
         pygame.display.set_caption("SnapForge")
         self._clock = pygame.time.Clock()
 
-        # Layout Manager : toutes les dimensions proportionnelles
+        # Layout Manager initialisé sur la résolution RENDUE (= config si ok)
         self._lm = LayoutManager(self._w, self._h)
-        # Mettre à jour les constantes module ROW_H/HDR_H/BTN_H
         global ROW_H, HDR_H, BTN_H
         ROW_H = self._lm.row_h
         HDR_H = self._lm.hdr_h
@@ -549,9 +548,11 @@ class PygameUI:
                 continue
 
             if itype == "action":
-                # selected=is_sel → fond + contour blanc quand curseur sur ce bouton
+                # Boutons action : 78 % de la largeur, centrés — moins étouffants
+                act_w = int(panel_w * 0.78)
+                act_x = margin + (panel_w - act_w) // 2
                 btns.append(_Btn(
-                    (margin, y, panel_w, ROW_H - 4), item["label"], item["color"],
+                    (act_x, y, act_w, ROW_H - 4), item["label"], item["color"],
                     font=self._fonts["sm"], action=item["action"], data=None, radius=8,
                     selected=is_sel,
                 ))
@@ -1062,10 +1063,8 @@ class PygameUI:
 
     def _r_qr(self):
         """
-        Écran résultat — approche unifiée portrait/paysage :
-        La photo occupe tout l'espace disponible (minus bouton bas).
-        Le QR code est overlayé dans le coin supérieur droit de la photo.
-        Toujours visible, jamais hors-écran.
+        Écran résultat : photo à 82 % de la zone (marges visuelles),
+        QR code en overlay coin supérieur GAUCHE de la photo.
         """
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
@@ -1077,13 +1076,14 @@ class PygameUI:
         avail_h = btn_cy - lm.btn_h // 2 - lm.gap_sm
         avail_w = self._w
 
-        # Charger et afficher la photo (centrée, maximale dans la zone)
+        # Photo réduite à 82 % pour laisser des marges visuelles
+        PHOTO_SCALE = 0.82
         photo_rect = None
         if photo and Path(photo).exists():
             try:
                 img = pygame.image.load(photo)
                 iw, ih = img.get_size()
-                scale = min(avail_w / iw, avail_h / ih)
+                scale = min(avail_w / iw, avail_h / ih) * PHOTO_SCALE
                 nw, nh = int(iw * scale), int(ih * scale)
                 img = pygame.transform.scale(img, (nw, nh))
                 px = (avail_w - nw) // 2
@@ -1093,30 +1093,29 @@ class PygameUI:
             except Exception as e:
                 logger.error(f"QR photo: {e}")
 
-        # QR Code en overlay : coin supérieur droit de la photo
+        # QR Code en overlay : coin supérieur GAUCHE de la photo
         if qr is not None and photo_rect is not None:
             try:
                 pil    = qr.convert("RGB")
-                # Taille = 22 % du côté le plus court de la photo
-                qr_sz  = max(60, int(min(photo_rect.width, photo_rect.height) * 0.22))
+                # Taille QR = 22 % du côté le plus court, min 120px
+                qr_sz  = max(120, int(min(photo_rect.width, photo_rect.height) * 0.22))
                 qsurf  = pygame.image.fromstring(pil.tobytes(), pil.size, "RGB")
                 qsurf  = pygame.transform.smoothscale(qsurf, (qr_sz, qr_sz))
-                mg     = max(6, int(qr_sz * 0.06))  # marge intérieure
-                qx     = photo_rect.right - qr_sz - mg
-                qy     = photo_rect.top   + mg
+                mg     = max(8, int(qr_sz * 0.06))
+                # Coin supérieur GAUCHE de la photo
+                qx     = photo_rect.left + mg
+                qy     = photo_rect.top  + mg
 
-                # Fond blanc semi-transparent pour lisibilité maximale
-                bg = pygame.Surface((qr_sz + 6, qr_sz + 6))
+                # Fond blanc opaque pour lisibilité maximale (QR sur fond coloré)
+                bg = pygame.Surface((qr_sz + 8, qr_sz + 8))
                 bg.fill(_WHITE)
-                bg.set_alpha(230)
-                self._screen.blit(bg, (qx - 3, qy - 3))
+                bg.set_alpha(240)
+                self._screen.blit(bg, (qx - 4, qy - 4))
                 self._screen.blit(qsurf, (qx, qy))
 
-                # Mini texte sous le QR (si assez de place dans la photo)
-                txt_y = qy + qr_sz + max(3, lm.gap_sm // 2)
-                if txt_y + lm.font_xs < photo_rect.bottom - 4:
-                    self._txt("Scannez !", "xs", _LGRAY,
-                              qx + qr_sz // 2, txt_y, cx=True)
+                # Texte "Scannez !" sous le QR
+                txt_y = qy + qr_sz + max(4, lm.gap_sm)
+                self._txt("Scannez !", "xs", _LGRAY, qx + qr_sz // 2, txt_y, cx=True)
             except Exception as e:
                 logger.error(f"QR overlay: {e}")
 
