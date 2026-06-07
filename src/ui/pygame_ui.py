@@ -855,32 +855,38 @@ class PygameUI:
         # Sous-titre
         self._txt("Bienvenue !", "md", _GRAY, self._w // 2, subtitle_y, cx=True)
 
-        # --- Zone carrousel ---
-        btn_cy  = self._h - 60 if self._is_portrait else self._h - 80
-        btn_h   = self._fonts["md"].get_height() + 44   # hauteur approx. du bouton
-        zone_x  = 20
-        zone_w  = self._w - 40
-        zone_y  = subtitle_y + 30
-        zone_h  = btn_cy - btn_h // 2 - 20 - zone_y
-        zone_h  = max(60, zone_h)
+        # --- Zone carrousel (explicitement bornée au-dessus du bouton) ---
+        # Hauteur approximative du bouton APPUYEZ POUR COMMENCER
+        btn_cy      = self._h - 60 if self._is_portrait else self._h - 80
+        btn_h_est   = self._fonts["md"].get_height() + 44
+        btn_top     = btn_cy - btn_h_est // 2
+        SAFE_MARGIN = 24   # px de marge au-dessus du bouton
+
+        zone_x = 20
+        zone_w = self._w - 40
+        zone_y = subtitle_y + 45
+        # Bottom = btn_top - safe_margin (jamais au-dessous)
+        zone_bot = btn_top - SAFE_MARGIN
+        # Cap de hauteur selon orientation (évite les zones trop grandes)
+        MAX_H = 270 if self._is_portrait else 170
+        zone_h = min(MAX_H, max(60, zone_bot - zone_y))
 
         if has_carousel and zone_h >= 60:
-            # Avancer le carrousel si nécessaire
             self._carousel.update()
-            # Rendu : photo+cadre et ombre sont déjà tournés ensemble
-            # Ordre de rendu : ombres en premier, photos au-dessus
-            items = self._carousel.get_render_items(zone_x, zone_y, zone_w, zone_h)
-            for photo_surf, shadow_surf, x, y in items:
-                self._screen.blit(shadow_surf, (x + 5, y + 5))
-            for photo_surf, shadow_surf, x, y in items:
-                self._screen.blit(photo_surf, (x, y))
+            # Ombres en premier, photos au-dessus
+            items = self._carousel.get_render_items(
+                zone_x, zone_y, zone_w, zone_h, self._is_portrait
+            )
+            for _photo, shadow, x, y in items:
+                self._screen.blit(shadow, (x + 5, y + 5))
+            for photo, _shadow, x, y in items:
+                self._screen.blit(photo, (x, y))
         else:
-            # Animation points (aucune photo pour le moment)
-            t    = int(time.time() * 2) % 3
-            dy   = zone_y + zone_h // 2
+            # Animation points (aucune photo encore)
+            t  = int(time.time() * 2) % 3
+            dy = zone_y + zone_h // 2
             for i in range(3):
-                c = _ACCENT if i == t else _GRAY
-                pygame.draw.circle(self._screen, c,
+                pygame.draw.circle(self._screen, _ACCENT if i == t else _GRAY,
                                    (self._w // 2 - 20 + i * 20, dy), 7)
 
     def _r_choose(self):
