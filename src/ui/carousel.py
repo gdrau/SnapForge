@@ -244,48 +244,48 @@ class CarouselManager:
             return []
 
         if is_portrait:
-            # Boîte proportionnelle à la zone (plus grande selon l'espace dispo)
-            # 2 photos → plus grandes ; 3 photos → légèrement plus petites
-            ratio_w = 0.42 if n <= 2 else 0.33
-            ratio_h = 0.80 if n <= 2 else 0.58
-            box_w   = max(80,  int(zw * ratio_w))
-            box_h   = max(100, int(zh * ratio_h))
+            # BOÎTE CARRÉE : même côté S pour portrait ET paysage
+            # → les photos ont la même dimension apparente quelle que soit leur orientation
+            S_ratio = 0.38 if n <= 2 else 0.28
+            S = max(70, min(int(zw * S_ratio), int(zh * 0.80)))
+            box_w, box_h = S, S
             max_rot = 5.0
             table   = _TABLE_P.get(n, _TABLE_P[min(n, 3)])
         else:
-            # Boîte proportionnelle à la zone paysage
-            ratio_w = 0.22 if n <= 3 else 0.18
-            ratio_h = 0.72 if n <= 3 else 0.65
-            box_w   = max(80, int(zw * ratio_w))
-            box_h   = max(60, int(zh * ratio_h))
+            # Boîte carrée pour la zone paysage
+            S_ratio = 0.20 if n <= 3 else 0.16
+            S = max(55, min(int(zw * S_ratio), int(zh * 0.75)))
+            box_w, box_h = S, S
             max_rot = 8.0
             table   = _TABLE_L.get(n, _TABLE_L[min(n, 5)])
 
         items = []
 
         for surf, (cx_r, cy_r, raw_angle, sf) in zip(photos, table):
-            # Clamp de l'angle
             angle = max(-max_rot, min(max_rot, raw_angle))
 
-            # 1. Redimensionner dans la boîte (ratio conservé)
+            # 1. Redimensionner dans la boîte CARRÉE
+            #    _fit_in_box(surf, S, S) → longue dimension = S, ratio conservé
+            #    Résultat : même taille visuelle pour portrait et paysage
             scaled = self._fit_in_box(surf, box_w, box_h, sf)
             pw, ph = scaled.get_size()
             if pw < 10 or ph < 10:
                 continue
 
-            # 2. Cadre blanc + ombre (APRÈS redimensionnement → cadre toujours visible)
+            # 2. Cadre blanc + ombre
             photo_full, shadow_full = self._add_border_and_shadow(scaled)
             fw, fh = photo_full.get_size()
 
-            # 3. Rotation de l'ensemble (photo+cadre ET ombre tournent ensemble)
-            rot_photo  = pygame.transform.rotate(photo_full,  angle)
-            rot_shadow = pygame.transform.rotate(shadow_full, angle)
-            rw, rh     = rot_photo.get_size()
+            # 3. Rotation LISSÉE (rotozoom = interpolation bilinéaire → pas de crénelage)
+            if abs(angle) > 0.3:
+                rot_photo  = pygame.transform.rotozoom(photo_full,  angle, 1.0)
+                rot_shadow = pygame.transform.rotozoom(shadow_full, angle, 1.0)
+            else:
+                rot_photo, rot_shadow = photo_full, shadow_full
+            rw, rh = rot_photo.get_size()
 
-            # Vérifier que la bounding box après rotation tient dans la zone
-            # (pygame.transform.rotate calcule la bbox exacte)
+            # 4. Réduire si la bbox après rotation dépasse la zone
             if rw > zw or rh > zh:
-                # Réduire si trop grand
                 s = min(zw / rw, zh / rh) * 0.95
                 rot_photo  = pygame.transform.smoothscale(rot_photo,  (int(rw*s), int(rh*s)))
                 rot_shadow = pygame.transform.smoothscale(rot_shadow, (int(rw*s), int(rh*s)))

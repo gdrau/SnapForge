@@ -32,7 +32,12 @@ class QRGenerator:
         Sauvegarde dans output_path si fourni.
         Retourne une PIL Image, ou None si désactivé/erreur.
         """
-        if not self._enabled or not _QR_AVAILABLE:
+        if not self._enabled:
+            logger.warning("QR Code desactive (qr.enabled=false dans config.yaml) — "
+                           "verifier Admin > Plugins > QR Code sur resultat")
+            return None
+        if not _QR_AVAILABLE:
+            logger.error("qrcode non installe : pip install qrcode[pil]")
             return None
 
         url = f"{self._base_url.rstrip('/')}/{Path(filename).name}"

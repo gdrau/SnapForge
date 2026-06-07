@@ -245,7 +245,9 @@ class PygameUI:
         txt      = "APPUYEZ POUR COMMENCER"
         font_key = "md" if self._is_portrait else "lg"
         px       = 20   if self._is_portrait else 50
-        cy       = self._h - 60 if self._is_portrait else self._h - 80
+        # Centre du bouton : marge en bas = btn_h + 2×gap_md (confortable, non collé)
+        lm = self._lm
+        cy = self._h - lm.btn_h - lm.gap_md * 2
         self._buttons = [
             self._btn_auto(txt, _ACCENT, self._w // 2, cy,
                            font=font_key, px=px, py=22,
