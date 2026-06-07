@@ -268,12 +268,15 @@ class PygameUI:
         btns = []
 
         if self._is_portrait:
-            # Portrait : boutons empilés verticalement
-            btn_w = int(self._w * 0.78)
-            btn_h = int(self._h * 0.20)
-            gap_v = int(self._h * 0.03)
-            total_h = n * btn_h + (n - 1) * gap_v
-            y_start = self._h // 2 - total_h // 2
+            # Portrait : boutons répartis entre le titre (12 %) et le hint (92 %)
+            btn_area_top = int(self._h * 0.18)
+            btn_area_bot = int(self._h * 0.87)
+            available_h  = btn_area_bot - btn_area_top
+            btn_h  = min(int(self._h * 0.24), (available_h - (n - 1) * 20) // n)
+            btn_h  = max(60, btn_h)
+            btn_w  = int(self._w * 0.78)
+            gap_v  = max(16, (available_h - n * btn_h) // (n + 1))
+            y_start = btn_area_top + gap_v
             font = self._best_font_for(longest, btn_w)
             for i, v in enumerate(layouts):
                 x = (self._w - btn_w) // 2
@@ -307,8 +310,11 @@ class PygameUI:
     def show_preview(self, total: int, remaining: int):
         self._screen_name = "preview"
         self._info = {"total": total, "remaining": remaining, "countdown": 0}
+        lm = self._lm
+        # Bouton centré verticalement dans les 8 % bas de l'écran (marge confortable)
+        btn_cy = self._h - lm.btn_h - lm.gap_md
         self._buttons = [
-            self._btn_auto("CAPTURER", _ACCENT, self._w // 2, self._h - 55,
+            self._btn_auto("CAPTURER", _ACCENT, self._w // 2, btn_cy,
                            font="md", px=50, py=18, action="start_countdown")
         ]
 
@@ -356,8 +362,11 @@ class PygameUI:
     def show_qr(self, photo_path: str, qr_image, upload_url):
         self._screen_name = "qr"
         self._info = {"photo": photo_path, "qr": qr_image, "url": upload_url}
+        lm = self._lm
+        # Bouton avec marge proportionnelle depuis le bas
+        btn_cy = self._h - lm.btn_h // 2 - lm.gap_md
         self._buttons = [
-            self._btn_auto("RETOUR ACCUEIL", _BLUE, self._w // 2, self._h - 26,
+            self._btn_auto("RETOUR ACCUEIL", _BLUE, self._w // 2, btn_cy,
                            font="xs", px=28, py=10, action="return_idle")
         ]
 
@@ -939,9 +948,9 @@ class PygameUI:
         zone_w   = self._w - lm.margin * 2
         zone_y   = subtitle_y + lm.gap_md + lm.gap_sm
         zone_bot = btn_top - safe_margin
-        # Hauteur max = ratio LayoutManager (35 % de h environ)
-        max_h    = lm.px(lm.idle_carousel_max_h)
-        zone_h   = min(max_h, max(60, zone_bot - zone_y))
+        # Utiliser TOUT l'espace disponible entre sous-titre et bouton
+        # (plus de cap arbitraire — zone aussi grande que possible)
+        zone_h   = max(60, zone_bot - zone_y)
 
         if has_carousel and zone_h >= 60:
             self._carousel.update()
@@ -965,11 +974,14 @@ class PygameUI:
 
     def _r_choose(self):
         self._screen.fill(_DARK)
-        # Police du titre auto-ajustée pour ne jamais dépasser la largeur de l'écran
-        self._txt_fit("Combien de photos ?", _WHITE, self._w // 2, 48,
+        # Titre : 10 % depuis le haut (pas collé au bord)
+        title_y = max(40, int(self._h * 0.10))
+        self._txt_fit("Combien de photos ?", _WHITE, self._w // 2, title_y,
                       max_w=self._w - 20, cx=True)
+        # Hint : 92 % de la hauteur (pas collé au bas)
+        hint_y = int(self._h * 0.92)
         hint = "Appuyez pour commencer" if self._is_portrait else "Appuyez sur votre choix pour commencer"
-        self._txt_fit(hint, _GRAY, self._w // 2, self._h - 28,
+        self._txt_fit(hint, _GRAY, self._w // 2, hint_y,
                       max_w=self._w - 20, cx=True)
 
     def _r_preview(self):
@@ -1024,7 +1036,7 @@ class PygameUI:
         self._screen.fill(_DARK)
         photo = self._info.get("photo")
         qr    = self._info.get("qr")
-        btn_area = 46  # hauteur réservée pour le bouton RETOUR ACCUEIL
+        btn_area = self._lm.btn_h + self._lm.gap_md   # proportionnel à la résolution
 
         if self._is_portrait:
             # ----------------------------------------------------------------
@@ -1185,12 +1197,20 @@ class PygameUI:
 
             cy = y + ROW_H // 2
 
-            # Indicateur de sélection clavier : barre orange à gauche de la ligne
-            # "back" exclu ici — la barre est dessinée sur le bouton fixe du bas
+            # Sélection clavier : fond surligné + barre orange proportionnelle
+            # "back" exclu ici — sa barre est dessinée sur le bouton fixe
             if idx == sel and not self._text_editing and itype != "back":
-                bar_x = margin - 8
+                # Fond légèrement plus clair sur toute la ligne
+                hl = pygame.Surface((panel_w, ROW_H - 4))
+                hl.fill((60, 72, 88))
+                hl.set_alpha(200)
+                self._screen.blit(hl, (margin, y + 2))
+                # Barre orange — largeur proportionnelle à la marge (visible à toute résolution)
+                bar_w = max(5, int(margin * 0.22))
+                bar_x = max(0, margin - bar_w - 4)
                 pygame.draw.rect(self._screen, _ACCENT,
-                                 (bar_x, y + 2, 4, ROW_H - 8), border_radius=2)
+                                 (bar_x, y + 2, bar_w, ROW_H - 8),
+                                 border_radius=max(2, bar_w // 2))
 
             if itype == "nav":
                 # _NavBtn gère son propre rendu — rien à faire ici

@@ -244,15 +244,22 @@ class CarouselManager:
             return []
 
         if is_portrait:
-            # Boîte portrait : convient aux deux orientations de photo
-            box_w, box_h = 108, 136
-            max_rot      = 5.0
-            table        = _TABLE_P.get(n, _TABLE_P[min(n, 3)])
+            # Boîte proportionnelle à la zone (plus grande selon l'espace dispo)
+            # 2 photos → plus grandes ; 3 photos → légèrement plus petites
+            ratio_w = 0.42 if n <= 2 else 0.33
+            ratio_h = 0.80 if n <= 2 else 0.58
+            box_w   = max(80,  int(zw * ratio_w))
+            box_h   = max(100, int(zh * ratio_h))
+            max_rot = 5.0
+            table   = _TABLE_P.get(n, _TABLE_P[min(n, 3)])
         else:
-            # Boîte paysage : photos plus larges que hautes
-            box_w, box_h = 130, 98
-            max_rot      = 8.0
-            table        = _TABLE_L.get(n, _TABLE_L[min(n, 5)])
+            # Boîte proportionnelle à la zone paysage
+            ratio_w = 0.22 if n <= 3 else 0.18
+            ratio_h = 0.72 if n <= 3 else 0.65
+            box_w   = max(80, int(zw * ratio_w))
+            box_h   = max(60, int(zh * ratio_h))
+            max_rot = 8.0
+            table   = _TABLE_L.get(n, _TABLE_L[min(n, 5)])
 
         items = []
 
