@@ -288,15 +288,22 @@ class StateMachine:
             except Exception as e:
                 logger.error(f"Upload : {e}")
 
-        # --- Étape 2 : générer le QR avec l'URL réelle ---
+        # --- Étape 2 : générer le QR ---
+        # use_upload_url=true  → URL cloud (Cloudflare R2, etc.) — liens publics
+        # use_upload_url=false → URL locale base_url + filename (nginx) — défaut
+        # Google Photos productUrl N'EST PAS public → toujours false avec Google Photos
+        use_upload_url = self._config.get("qr.use_upload_url", False)
+
         qr_img = None
         if show_qr:
-            if upload_url:
-                # URL directe du cloud (Google Photos, Cloudflare, etc.)
+            if upload_url and use_upload_url:
+                # URL directe cloud publique (Cloudflare R2, S3, etc.)
                 qr_img = self._qr.generate_from_url(upload_url, qr_path)
+                logger.info(f"QR = URL cloud : {upload_url}")
             else:
-                # Fallback : URL locale base_url + nom fichier
+                # URL locale ou base_url configurée (accessible par tous sur le WiFi)
                 qr_img = self._qr.generate(self._session.final_filename, qr_path)
+                logger.info("QR = URL locale (base_url + filename)")
 
             # Dernier recours : charger depuis le PNG déjà sauvegardé
             if qr_img is None and Path(qr_path).exists():

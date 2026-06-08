@@ -81,24 +81,37 @@ printing:
   dpi: 300
 
 cloud:
-  enabled: false
-  provider: local
+  # Provider recommandé : cloudflare — URLs publiques, gratuit jusqu'à 10 Go
+  # Guide complet : docs/CONFIGURATION_CLOUDFLARE_R2.md
+  enabled: false             # Mettre à true pour activer l'upload
+  provider: cloudflare       # cloudflare (recommandé) | google_photos | local
   retry_on_failure: true
   retry_queue_file: Photo/upload_queue.json
-  local:
-    output_dir: Photo/exported
+
+  cloudflare:
+    account_id:       ""     # Dashboard Cloudflare → colonne droite
+    api_token:        ""     # Profil → API Tokens → Create Token (R2 Storage Edit)
+    bucket_name:      ""     # Nom du bucket R2 créé (ex: snapforge)
+    public_url_base:  ""     # https://pub-XXXX.r2.dev (settings du bucket)
+
+  # Google Photos : archivage personnel uniquement — URLs NON publiques
+  # Guide : docs/CONFIGURATION_GOOGLE_PHOTOS.md
   google_photos:
     credentials_file: credentials/google_credentials.json
     album_name: SnapForge
-  cloudflare:
-    account_id: ""
-    api_token: ""
-    bucket_name: ""
-    public_url_base: ""
+
+  local:
+    output_dir: Photo/exported
 
 qr:
   enabled: true
-  base_url: "http://snapforge.local/photos"
+  # Avec Cloudflare R2 : mettre l'URL publique du bucket
+  # Avec nginx local   : mettre http://IP_DU_PI/photos
+  base_url: "https://pub-XXXX.r2.dev"
+  # true  = QR pointe vers l'URL cloud (Cloudflare R2 → public ✓)
+  # false = QR pointe vers base_url + filename (nginx local ou fallback)
+  # ⚠️ JAMAIS true avec Google Photos (URLs privées → 403 pour les invités)
+  use_upload_url: true
   size: 300
   display_duration: 15
 

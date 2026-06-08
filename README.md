@@ -184,6 +184,19 @@ Voir [docs/TEMPLATES.md](docs/TEMPLATES.md) pour créer ses propres templates.
 
 ---
 
+## Cloud — Upload et QR code
+
+| Provider          | URLs publiques | Gratuit | Usage recommandé |
+|-------------------|:--------------:|:-------:|-----------------|
+| **Cloudflare R2** | ✅ Oui | 10 Go/mois | Partage QR invités ✅ |
+| Google Photos | ❌ Non | Illimité | Archivage personnel |
+| Nginx local | WiFi seulement | Gratuit | Événement réseau local |
+
+**Recommandé : Cloudflare R2** — URL publique directe, invités téléchargent leur photo.
+Voir [docs/CONFIGURATION_CLOUDFLARE_R2.md](docs/CONFIGURATION_CLOUDFLARE_R2.md)
+
+---
+
 ## IA — Remplacement de fond
 
 | Provider       | Qualité  | Vitesse Pi 4 | Internet | Coût    |
@@ -203,3 +216,5 @@ Voir [docs/TEMPLATES.md](docs/TEMPLATES.md) pour créer ses propres templates.
 - [Créer un template](docs/TEMPLATES.md)
 - [Procédures de test](docs/TESTING.md)
 - [Git & déploiement Raspberry Pi](docs/Create_Update_Git_Raspberry.md)
+- [Configuration Cloudflare R2](docs/CONFIGURATION_CLOUDFLARE_R2.md) — cloud recommandé
+- [Configuration Google Photos](docs/CONFIGURATION_GOOGLE_PHOTOS.md) — archivage personnel

@@ -1,5 +1,13 @@
 # Configuration Google Photos — SnapForge
 
+> ⚠️ **Pour partager les photos avec les invités via QR code, utilisez Cloudflare R2 à la place.**
+> Google Photos génère des URLs **privées** — seul le propriétaire du compte peut y accéder.
+> Voir [CONFIGURATION_CLOUDFLARE_R2.md](CONFIGURATION_CLOUDFLARE_R2.md) pour la solution recommandée.
+>
+> Ce guide est utile si vous souhaitez **archiver** vos photos sur Google Photos en parallèle.
+
+---
+
 Ce guide explique comment connecter SnapForge à votre compte Google Photos pour uploader automatiquement les photos après chaque session.
 
 ---
