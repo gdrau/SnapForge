@@ -29,7 +29,7 @@ try:
 except ImportError:
     _PIL_OK = False
 
-_THUMB_MAX = 280   # taille max de la miniature brute en cache
+_THUMB_MAX = 600   # taille max miniature — plus grande = meilleure qualité en mode simple
 
 # ---------------------------------------------------------------------------
 # Dispositions selon l'orientation de la ZONE
@@ -84,6 +84,9 @@ _TABLE_P = {
     8: [(0.22, 0.18, -4.0, 0.82), (0.50, 0.15,  0.0, 0.82), (0.78, 0.18,  3.0, 0.82),
         (0.22, 0.50, -2.0, 0.82), (0.78, 0.50,  2.0, 0.82),
         (0.22, 0.80, -3.0, 0.82), (0.50, 0.82,  1.0, 0.82), (0.78, 0.80,  4.0, 0.82)],
+    9: [(0.18, 0.18, -3.0, 0.78), (0.50, 0.16,  0.0, 0.78), (0.82, 0.18,  3.0, 0.78),
+        (0.18, 0.50, -2.0, 0.78), (0.50, 0.50,  0.0, 0.78), (0.82, 0.50,  2.0, 0.78),
+        (0.18, 0.82, -3.0, 0.78), (0.50, 0.82,  1.0, 0.78), (0.82, 0.82,  3.0, 0.78)],
 }
 
 
@@ -148,9 +151,9 @@ class CarouselManager:
             if not self._thumbs:
                 return []
 
-            # Nombre max : portrait ≤8, paysage ≤9 (configurable via admin)
+            # Nombre max : 9 photos pour les deux orientations (configurable via admin)
             cfg_max = int(self._config.get("home_carousel.max_photos_displayed", 9))
-            max_n   = min(8 if is_portrait else 9, cfg_max)
+            max_n   = min(9, cfg_max)
             n       = min(max_n, len(self._thumbs))
             key = (self._offset, self.mode, n, zw, zh, is_portrait)
 
@@ -254,13 +257,40 @@ class CarouselManager:
     # --- Layouts --------------------------------------------------------
 
     def _layout_simple(self, photos, zw, zh, is_portrait):
+        """
+        Mode simple : UNE photo qui remplit TOUTE la zone disponible.
+        Ratio conservé, pas de cap à 1.0 → la photo est aussi grande que la zone.
+        Bordure fine de 4px pour un aspect propre.
+        """
         if not photos:
             return []
-        bw = (105 if is_portrait else 130)
-        bh = (140 if is_portrait else 100)
-        scaled = self._fit_in_box(photos[0], bw, bh)
-        photo, shadow = self._add_border_and_shadow(scaled)
-        fw, fh = photo.get_size()
+        surf = photos[0]
+        iw, ih = surf.get_size()
+
+        # Bordure très fine pour ne pas rogner la photo
+        BORDER = max(3, int(min(zw, zh) * 0.008))
+
+        # Mise à l'échelle SANS cap → la photo remplit la zone
+        avail_w = zw - BORDER * 2 - 4
+        avail_h = zh - BORDER * 2 - 4
+        scale   = min(avail_w / iw, avail_h / ih)
+        nw      = max(1, int(iw * scale))
+        nh      = max(1, int(ih * scale))
+
+        scaled = pygame.transform.smoothscale(surf, (nw, nh))
+
+        # Cadre blanc fin (SRCALPHA)
+        fw, fh = nw + BORDER * 2, nh + BORDER * 2
+        photo = pygame.Surface((fw, fh), pygame.SRCALPHA)
+        photo.fill((0, 0, 0, 0))
+        pygame.draw.rect(photo, (252, 252, 252, 255), (0, 0, fw, fh))
+        photo.blit(scaled, (BORDER, BORDER))
+
+        # Ombre légère
+        shadow = pygame.Surface((fw, fh), pygame.SRCALPHA)
+        shadow.fill((0, 0, 0, 0))
+        pygame.draw.rect(shadow, (0, 0, 0, 65), (0, 0, fw, fh))
+
         return [(photo, shadow, (zw - fw) // 2, (zh - fh) // 2)]
 
     def _layout_table(self, photos, zw, zh, is_portrait):
