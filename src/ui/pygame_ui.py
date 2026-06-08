@@ -160,44 +160,63 @@ class PygameUI:
 
     def _init_pygame(self):
         """
-        Fullscreen à la résolution NATIVE de l'écran → rendu net, pas de pixelation.
-        LayoutManager scale tous les éléments proportionnellement.
-        L'orientation (portrait/paysage) est déterminée par la config.
+        Architecture Canvas Logique :
+        ─────────────────────────────────────────────────────────────────
+        self._screen  = Surface logique (config_w × config_h = ex 480×800)
+                        Tous les écrans dessinent ICI, toujours à résolution config.
+        self._display = Écran réel pygame (résolution native de l'écran)
+                        Utilisé uniquement pour afficher le canvas final.
+
+        En fin de frame : smoothscale(logical → display) avec letterbox.
+        Conséquence : PC 480×800 windowed = Pi 1080×1920 fullscreen → IDENTIQUES.
+        ─────────────────────────────────────────────────────────────────
         """
         pygame.init()
         pygame.mouse.set_visible(not self._fullscreen)
 
+        # --- Écran réel ---
         if self._fullscreen:
-            # Résolution native = qualité maximale, aucun upscaling
-            info     = pygame.display.Info()
-            native_w = info.current_w if info.current_w > 0 else self._config_w
-            native_h = info.current_h if info.current_h > 0 else self._config_h
-
-            # Respecter l'orientation configurée
-            config_portrait = self._config_h > self._config_w
-            if config_portrait and native_w > native_h:
-                native_w, native_h = native_h, native_w   # swap → portrait
-            elif not config_portrait and native_h > native_w:
-                native_w, native_h = native_h, native_w   # swap → paysage
-
-            flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-            self._screen = pygame.display.set_mode((native_w, native_h), flags)
+            info = pygame.display.Info()
+            rw   = info.current_w if info.current_w > 0 else self._config_w
+            rh   = info.current_h if info.current_h > 0 else self._config_h
+            # Swap si l'orientation OS ne correspond pas à la config
+            if (self._config_h > self._config_w) and rw > rh:
+                rw, rh = rh, rw
+            elif (self._config_w > self._config_h) and rh > rw:
+                rw, rh = rh, rw
+            flags          = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
+            self._display  = pygame.display.set_mode((rw, rh), flags)
         else:
-            self._screen = pygame.display.set_mode((self._config_w, self._config_h))
+            # Fenêtré : affichage à la même taille que le canvas logique
+            self._display  = pygame.display.set_mode((self._config_w, self._config_h))
 
-        self._w, self._h = self._screen.get_size()
+        real_w, real_h = self._display.get_size()
+
+        # --- Canvas logique : TOUJOURS à la résolution config ---
+        self._w      = self._config_w
+        self._h      = self._config_h
+        self._screen = pygame.Surface((self._w, self._h))   # ← tout le rendu va ici
+
+        # --- Facteur d'échelle et centrage (letterbox) ---
+        self._scale    = min(real_w / self._w, real_h / self._h)
+        scaled_w       = int(self._w * self._scale)
+        scaled_h       = int(self._h * self._scale)
+        self._offset_x = (real_w - scaled_w) // 2
+        self._offset_y = (real_h - scaled_h) // 2
+
+        # --- Logs ---
         orient = "portrait" if self._h > self._w else "paysage"
-        scale  = round(min(self._w / self._config_w, self._h / self._config_h), 2)
-
-        logger.info(f"Resolution config  : {self._config_w}x{self._config_h}")
-        logger.info(f"Resolution rendu   : {self._w}x{self._h}")
+        logger.info(f"Canvas logique     : {self._w}x{self._h}")
+        logger.info(f"Ecran reel         : {real_w}x{real_h}")
         logger.info(f"Orientation        : {orient}")
-        logger.info(f"Scale factor       : {scale}")
+        logger.info(f"Scale factor       : {self._scale:.2f}")
+        logger.info(f"Surface finale     : {scaled_w}x{scaled_h}")
+        logger.info(f"Offsets            : x={self._offset_x} y={self._offset_y}")
 
         pygame.display.set_caption("SnapForge")
         self._clock = pygame.time.Clock()
 
-        # LayoutManager initialisé sur la résolution réelle → éléments proportionnels
+        # LayoutManager sur le canvas logique (stable, identique PC/Pi)
         self._lm = LayoutManager(self._w, self._h)
         global ROW_H, HDR_H, BTN_H
         ROW_H = self._lm.row_h
@@ -622,6 +641,14 @@ class PygameUI:
     # Boucle principale
     # ------------------------------------------------------------------
 
+    def _to_logical(self, real_x: int, real_y: int):
+        """Convertit coordonnées écran réel → canvas logique."""
+        if self._scale <= 0:
+            return real_x, real_y
+        lx = int((real_x - self._offset_x) / self._scale)
+        ly = int((real_y - self._offset_y) / self._scale)
+        return (max(0, min(lx, self._w - 1)), max(0, min(ly, self._h - 1)))
+
     def run(self):
         self._running = True
         while self._running:
@@ -629,6 +656,13 @@ class PygameUI:
                 if event.type == pygame.QUIT:
                     self._running = False
                     continue
+
+                # Convertir les coordonnées souris/touch vers le canvas logique
+                # (nécessaire quand scale != 1.0, i.e. Pi fullscreen)
+                if hasattr(event, 'pos') and self._scale != 1.0:
+                    lx, ly = self._to_logical(*event.pos)
+                    event  = pygame.event.Event(event.type,
+                                                {**event.__dict__, 'pos': (lx, ly)})
 
                 if event.type == pygame.KEYDOWN:
                     if self._screen_name == "admin":
@@ -932,22 +966,35 @@ class PygameUI:
             "admin":         self._r_admin,
             "confirm_quit":  self._r_confirm_quit,
         }
+        # 1. Rendu sur le canvas logique (self._screen = 480×800 toujours)
         dispatch.get(self._screen_name, lambda: self._screen.fill(_DARK))()
         for btn in self._buttons:
             if self._screen_name == "admin":
                 if btn.fixed:
-                    # Bouton à position fixe (ex: Retour) — dessiné tel quel, pas de clip
                     btn.draw(self._screen)
                 else:
                     real_rect = btn.rect.move(0, -self._admin_scroll)
                     if real_rect.bottom <= HDR_H or real_rect.top >= self._h:
                         continue
-                    orig = btn.rect
-                    btn.rect = real_rect
+                    orig      = btn.rect
+                    btn.rect  = real_rect
                     btn.draw(self._screen)
-                    btn.rect = orig
+                    btn.rect  = orig
             else:
                 btn.draw(self._screen)
+
+        # 2. Mise à l'échelle du canvas logique vers l'écran réel (smoothscale = anti-aliasé)
+        scaled_w = int(self._w * self._scale)
+        scaled_h = int(self._h * self._scale)
+        if scaled_w > 0 and scaled_h > 0:
+            if self._scale == 1.0:
+                # Pas de scaling nécessaire (PC windowed) → blit direct
+                self._display.blit(self._screen, (self._offset_x, self._offset_y))
+            else:
+                scaled = pygame.transform.smoothscale(self._screen, (scaled_w, scaled_h))
+                self._display.fill(_BLACK)
+                self._display.blit(scaled, (self._offset_x, self._offset_y))
+
         pygame.display.flip()
 
     def _r_idle(self):
