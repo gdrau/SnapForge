@@ -49,20 +49,42 @@ Cloudflare R2 est le stockage objet de Cloudflare. C'est la solution recommandé
 
 ## Étape 4 — Créer un token API R2
 
-1. En haut à droite du dashboard → **Mon profil** (votre avatar)
-2. Onglet **"API Tokens"**
-3. Cliquer **"Create Token"**
-4. Choisir le template **"Edit Cloudflare Workers"** OU cliquer **"Create Custom Token"**
+> **Note interface Cloudflare** : "Cloudflare R2 Storage" n'apparaît pas dans la catégorie "Account". Utilisez le template ou la méthode R2 directe ci-dessous.
 
-### Si Custom Token :
+### Méthode A — Template (la plus simple ✅)
 
-- **Token name** : `SnapForge R2`
-- **Permissions** :
-  - `Account` → `Cloudflare R2 Storage` → `Edit`
-- **Account Resources** : `Include` → votre compte
-- Cliquer **"Continue to summary"** → **"Create Token"**
+1. En haut à droite → **Mon profil** → onglet **"API Tokens"**
+2. Cliquer **"Create Token"**
+3. Trouver le template **"Edit Cloudflare Workers"** → cliquer **"Use template"**
+4. Ce template inclut automatiquement `Workers R2 Storage - Edit`
+5. Scroller vers le bas → **"Continue to summary"** → **"Create Token"**
+6. **Copier le token** — affiché une seule fois !
 
-5. **Copier le token** — il ne sera affiché qu'une seule fois !
+---
+
+### Méthode B — Depuis la page R2 directement
+
+1. Dashboard → **R2 Object Storage**
+2. En haut à droite de la page R2 → bouton **"Manage R2 API Tokens"**
+3. Cliquer **"Create API Token"**
+4. Nom : `SnapForge`
+5. Permissions : **Object Read & Write**
+6. Cliquer **"Create API Token"**
+7. Vous obtenez un **Access Key ID** et un **Secret Access Key**
+
+> ⚠️ **Méthode B** génère des credentials S3-compatible (pas un Bearer token).
+> Elle nécessite une configuration différente — préférez la **Méthode A** pour SnapForge.
+
+---
+
+### Méthode C — Token personnalisé (si les deux autres échouent)
+
+1. API Tokens → **"Create Token"** → **"Create Custom Token"**
+2. **Token name** : `SnapForge R2`
+3. Section **"Permissions"** → cliquer **"Add more"** → dans le champ de recherche, taper **`r2`** (pas "account")
+4. Sélectionner **"Workers R2 Storage"** → **"Edit"**
+5. **"Continue to summary"** → **"Create Token"**
+6. **Copier le token**
 
 ---
 
