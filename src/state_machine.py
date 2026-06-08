@@ -273,7 +273,8 @@ class StateMachine:
 
         # --- Étape 1 : upload (pendant lequel l'UI montre "Envoi en cours...") ---
         if self._uploader.enabled:
-            self._ui.show_uploading()
+            if hasattr(self._ui, 'show_uploading'):
+                self._ui.show_uploading()
             try:
                 upload_url = self._uploader.upload(
                     self._session.final_photo,

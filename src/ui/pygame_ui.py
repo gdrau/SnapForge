@@ -399,6 +399,12 @@ class PygameUI:
                            font="xs", px=28, py=10, action="return_idle")
         ]
 
+    def show_uploading(self):
+        """Affiche brièvement 'Envoi en cours...' pendant l'upload cloud."""
+        self._screen_name = "uploading"
+        self._buttons     = []
+        self._info        = {}
+
     def show_error(self, message: str):
         self._screen_name = "error"
         self._buttons = []
