@@ -160,43 +160,36 @@ class PygameUI:
 
     def _init_pygame(self):
         """
-        Stratégie fullscreen :
-        On utilise TOUJOURS la résolution CONFIGURÉE (config_w × config_h).
-        Le Pi/OS se charge du scaling vers l'écran physique.
-        Cela garantit que l'interface est identique quelle que soit la résolution native.
+        Fullscreen avec pygame.SCALED (pygame 2.0+) :
+        - L'app rend toujours à (config_w × config_h) = ex. 480×800
+        - pygame scale automatiquement vers l'écran physique réel
+        - Les coordonnées souris/boutons restent en espace 480×800
+        - Fonctionne quelle que soit la résolution native (1080×1920, 1920×1080, etc.)
         """
         pygame.init()
         pygame.mouse.set_visible(not self._fullscreen)
 
-        flags = (pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-                 if self._fullscreen else 0)
-        # Toujours utiliser la résolution configurée (480×800, 800×480, etc.)
+        if self._fullscreen:
+            # pygame.SCALED = scale vers l'écran physique, rend à config resolution
+            SCALED = getattr(pygame, 'SCALED', 0x00002000)
+            flags  = pygame.FULLSCREEN | SCALED
+        else:
+            flags = 0
+
         self._screen = pygame.display.set_mode((self._config_w, self._config_h), flags)
+        # Avec SCALED, get_size() retourne la config resolution
+        self._w, self._h = self._config_w, self._config_h
 
-        # Dimensions effectives (normalement = config, sauf si mode non supporté)
-        self._w, self._h = self._screen.get_size()
-
-        # Log diagnostic
-        info = pygame.display.Info()
-        native_w = info.current_w if info.current_w > 0 else "?"
-        native_h = info.current_h if info.current_h > 0 else "?"
-        orient    = "portrait" if self._h > self._w else "paysage"
-
+        orient = "portrait" if self._h > self._w else "paysage"
+        actual  = self._screen.get_size()
         logger.info(f"Resolution config  : {self._config_w}x{self._config_h}")
-        logger.info(f"Resolution rendu   : {self._w}x{self._h}")
-        logger.info(f"Resolution native  : {native_w}x{native_h}")
+        logger.info(f"Resolution surface : {actual[0]}x{actual[1]}")
         logger.info(f"Orientation        : {orient}")
-        if self._w != self._config_w or self._h != self._config_h:
-            logger.warning(
-                f"ATTENTION : resolution rendu ({self._w}x{self._h}) "
-                f"≠ config ({self._config_w}x{self._config_h}). "
-                f"Verifier que le mode est supporte par l'ecran."
-            )
+        logger.info(f"Fullscreen SCALED  : {self._fullscreen}")
 
         pygame.display.set_caption("SnapForge")
         self._clock = pygame.time.Clock()
 
-        # Layout Manager initialisé sur la résolution RENDUE (= config si ok)
         self._lm = LayoutManager(self._w, self._h)
         global ROW_H, HDR_H, BTN_H
         ROW_H = self._lm.row_h

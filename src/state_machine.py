@@ -268,13 +268,23 @@ class StateMachine:
     def _enter_qr_display(self):
         self._lights.all_off()
         self._lights.startup_on()
-        show_qr = self._config.get("plugins.qr_on_result", True)
-        qr_img = None
+        show_qr   = self._config.get("plugins.qr_on_result", True)
+        qr_path   = str(self._session.session_dir / "qrcode.png")
+        qr_img    = None
+
         if show_qr:
-            qr_img = self._qr.generate(
-                self._session.final_filename,
-                str(self._session.session_dir / "qrcode.png"),
-            )
+            # Tentative 1 : générer le QR via qrcode library
+            qr_img = self._qr.generate(self._session.final_filename, qr_path)
+
+            # Tentative 2 : charger depuis le fichier PNG déjà sauvegardé
+            if qr_img is None and Path(qr_path).exists():
+                try:
+                    from PIL import Image as _PIL
+                    qr_img = _PIL.open(qr_path).convert("RGB")
+                    logger.info("QR charge depuis fichier cache")
+                except Exception as e:
+                    logger.error(f"Impossible de charger QR depuis {qr_path}: {e}")
+
         self._ui.show_qr(self._session.final_photo, qr_img, self._session.upload_url)
         self._schedule_return(self._qr.display_duration)
 
