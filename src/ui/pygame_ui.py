@@ -396,27 +396,35 @@ class PygameUI:
         self._buttons = []
         self._info = {"msg": str(message)}
 
+    @staticmethod
+    def _confirm_quit_geometry(w, h, lm):
+        """Calcul des dimensions du dialogue Quitter — partagé render + show."""
+        box_w  = min(int(w * 0.88), int(lm.font_md * 20))
+        box_h  = int(h * 0.40)               # boîte plus grande = plus de place
+        box_x  = (w - box_w) // 2
+        box_y  = h // 2 - box_h // 2
+        gap    = max(8, lm.gap_sm)
+        half   = (box_w - gap) // 2
+        bh     = lm.btn_h
+        by     = box_y + int(box_h * 0.66)   # boutons dans les 33 % bas de la boîte
+        bx     = box_x
+        return box_x, box_y, box_w, box_h, bx, by, half, bh, gap
+
     def show_confirm_quit(self):
         """
         Dialogue de confirmation de fermeture.
         NE PAS effacer self._info — contient les settings admin pour le retour.
         """
         self._screen_name = "confirm_quit"
-        lm    = self._lm
-        box_w = min(int(self._w * 0.85), int(lm.font_md * 22))
-        bx    = (self._w - box_w) // 2
-        box_y = self._h // 2 - int(self._h * 0.10)
-        gap   = max(8, lm.gap_sm)
-        half  = (box_w - gap) // 2
-        bh    = lm.btn_h
-        by    = box_y + int(self._h * 0.15)
+        lm = self._lm
+        box_x, box_y, box_w, box_h, bx, by, half, bh, gap = \
+            self._confirm_quit_geometry(self._w, self._h, lm)
         self._buttons = [
-            _Btn((bx,            by, half, bh), "Oui, quitter", _RED,
+            _Btn((bx,          by, half, bh), "Oui, quitter", _RED,
                  font=self._fonts["sm"], action="quit_app",    radius=8),
-            _Btn((bx+half+gap,   by, half, bh), "Annuler",     _GRAY,
+            _Btn((bx+half+gap, by, half, bh), "Annuler",      _GRAY,
                  font=self._fonts["sm"], action="cancel_quit", radius=8),
         ]
-        # self._info est CONSERVÉ (settings admin disponibles pour cancel_quit)
 
     # ------------------------------------------------------------------
     # Admin
@@ -549,11 +557,9 @@ class PygameUI:
                 continue
 
             if itype == "action":
-                # Boutons action : 78 % de la largeur, centrés — moins étouffants
-                act_w = int(panel_w * 0.78)
-                act_x = margin + (panel_w - act_w) // 2
+                # Pleine largeur — sélection visible via couleur+bordure blanche
                 btns.append(_Btn(
-                    (act_x, y, act_w, ROW_H - 4), item["label"], item["color"],
+                    (margin, y, panel_w, ROW_H - 4), item["label"], item["color"],
                     font=self._fonts["sm"], action=item["action"], data=None, radius=8,
                     selected=is_sel,
                 ))
@@ -1131,22 +1137,25 @@ class PygameUI:
         self._txt("Retour automatique...", "xs", _GRAY, self._w // 2, self._h * 2 // 3, cx=True)
 
     def _r_confirm_quit(self):
-        """Dialogue de confirmation — dimensions calculées via LayoutManager."""
+        """Dialogue de confirmation — layout unifié avec show_confirm_quit."""
         self._screen.fill(_DARK)
-        lm    = self._lm
-        box_w = min(int(self._w * 0.85), int(lm.font_md * 22))
-        box_h = int(self._h * 0.28)
-        box_x = (self._w - box_w) // 2
-        box_y = self._h // 2 - box_h // 2
+        lm = self._lm
+        box_x, box_y, box_w, box_h, *_ = \
+            self._confirm_quit_geometry(self._w, self._h, lm)
         radius = max(10, int(lm.font_xs * 0.7))
+
+        # Boîte
         pygame.draw.rect(self._screen, _DARK2, (box_x, box_y, box_w, box_h), border_radius=radius)
         pygame.draw.rect(self._screen, _RED,   (box_x, box_y, box_w, box_h), 2, border_radius=radius)
-        self._txt("Quitter SnapForge ?", "md", _WHITE,
-                   self._w // 2, box_y + int(box_h * 0.28), cx=True)
-        self._txt("L'application va se fermer.", "xs", _GRAY,
-                   self._w // 2, box_y + int(box_h * 0.50), cx=True)
-        self._txt("Entree = confirmer   Echap = annuler", "xs", _DISABLED,
-                   self._w // 2, box_y + int(box_h * 0.68), cx=True)
+
+        # Textes dans les 65 % hauts de la boîte (boutons dans les 35 % bas)
+        cx = self._w // 2
+        self._txt_fit("Quitter SnapForge ?", _WHITE, cx,
+                      box_y + int(box_h * 0.18), max_w=box_w - 20, cx=True)
+        self._txt_fit("L'application va se fermer.", _GRAY, cx,
+                      box_y + int(box_h * 0.36), max_w=box_w - 20, cx=True)
+        self._txt_fit("Entree = confirmer     Echap = annuler", _DISABLED, cx,
+                      box_y + int(box_h * 0.52), max_w=box_w - 20, cx=True)
 
     # ------------------------------------------------------------------
     # Rendu admin
