@@ -233,7 +233,7 @@ class StateMachine:
             if self._printer.enabled:
                 self._go(State.REVIEW)
             else:
-                threading.Thread(target=self._do_upload, daemon=True).start()
+                # Upload géré dans _enter_qr_display pour avoir l'URL réelle avant le QR
                 self._go(State.QR_DISPLAY)
 
         except Exception as e:
@@ -255,37 +255,59 @@ class StateMachine:
         success = self._printer.print_photo(self._session.final_photo)
         self._ui.show_print_result(success)
         time.sleep(2)
-        threading.Thread(target=self._do_upload, daemon=True).start()
+        # Upload géré dans _enter_qr_display
         self._go(State.QR_DISPLAY)
 
-    def _do_upload(self):
-        try:
-            url = self._uploader.upload(self._session.final_photo, self._session.final_filename)
-            self._session.upload_url = url
-        except Exception as e:
-            logger.error(f"Upload: {e}")
-
     def _enter_qr_display(self):
+        """
+        1. Upload vers le cloud (synchrone) → obtient l'URL réelle
+        2. Génère le QR avec cette URL réelle (pas base_url + filename)
+        3. Affiche le résultat avec le bon QR
+        """
         self._lights.all_off()
         self._lights.startup_on()
-        show_qr   = self._config.get("plugins.qr_on_result", True)
-        qr_path   = str(self._session.session_dir / "qrcode.png")
-        qr_img    = None
 
+        show_qr  = self._config.get("plugins.qr_on_result", True)
+        qr_path  = str(self._session.session_dir / "qrcode.png")
+        upload_url = None
+
+        # --- Étape 1 : upload (pendant lequel l'UI montre "Envoi en cours...") ---
+        if self._uploader.enabled:
+            self._ui.show_uploading()
+            try:
+                upload_url = self._uploader.upload(
+                    self._session.final_photo,
+                    self._session.final_filename
+                )
+                self._session.upload_url = upload_url
+                if upload_url:
+                    logger.info(f"Upload OK → URL QR : {upload_url}")
+                else:
+                    logger.warning("Upload a échoué ou retourné None (voir upload_queue)")
+            except Exception as e:
+                logger.error(f"Upload : {e}")
+
+        # --- Étape 2 : générer le QR avec l'URL réelle ---
+        qr_img = None
         if show_qr:
-            # Tentative 1 : générer le QR via qrcode library
-            qr_img = self._qr.generate(self._session.final_filename, qr_path)
+            if upload_url:
+                # URL directe du cloud (Google Photos, Cloudflare, etc.)
+                qr_img = self._qr.generate_from_url(upload_url, qr_path)
+            else:
+                # Fallback : URL locale base_url + nom fichier
+                qr_img = self._qr.generate(self._session.final_filename, qr_path)
 
-            # Tentative 2 : charger depuis le fichier PNG déjà sauvegardé
+            # Dernier recours : charger depuis le PNG déjà sauvegardé
             if qr_img is None and Path(qr_path).exists():
                 try:
                     from PIL import Image as _PIL
                     qr_img = _PIL.open(qr_path).convert("RGB")
-                    logger.info("QR charge depuis fichier cache")
+                    logger.info("QR chargé depuis fichier cache")
                 except Exception as e:
-                    logger.error(f"Impossible de charger QR depuis {qr_path}: {e}")
+                    logger.error(f"Chargement QR cache : {e}")
 
-        self._ui.show_qr(self._session.final_photo, qr_img, self._session.upload_url)
+        # --- Étape 3 : afficher ---
+        self._ui.show_qr(self._session.final_photo, qr_img, upload_url)
         self._schedule_return(self._qr.display_duration)
 
     def _enter_admin(self):
