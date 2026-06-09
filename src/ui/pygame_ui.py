@@ -275,28 +275,29 @@ class PygameUI:
         # Recharger les photos du carrousel après chaque retour à l'accueil
         self._carousel.refresh()
 
-    def show_choose_format(self, layouts: List[int], selected: int):
+    def show_choose_format(self, layouts: List[int], selected: int,
+                           gif_enabled: bool = False):
         self._screen_name = "choose_format"
-        self._info = {"layouts": layouts, "selected": selected}
-        self._rebuild_format_buttons(layouts, selected)
+        self._info = {"layouts": layouts, "selected": selected, "gif_enabled": gif_enabled}
+        self._rebuild_format_buttons(layouts, selected, gif_enabled)
 
     def update_format_selection(self, selected: int):
         self._info["selected"] = selected
 
-    def _rebuild_format_buttons(self, layouts, selected):
-        n = len(layouts)
+    def _rebuild_format_buttons(self, layouts, selected, gif_enabled=False):
+        n      = len(layouts)
+        n_all  = n + (1 if gif_enabled else 0)  # total incluant GIF
         longest = max((f"{v} PHOTO{'S' if v > 1 else ''}" for v in layouts), key=len)
-        btns = []
+        btns   = []
 
         if self._is_portrait:
-            # Portrait : boutons répartis entre le titre (12 %) et le hint (92 %)
             btn_area_top = int(self._h * 0.18)
             btn_area_bot = int(self._h * 0.87)
             available_h  = btn_area_bot - btn_area_top
-            btn_h  = min(int(self._h * 0.24), (available_h - (n - 1) * 20) // n)
-            btn_h  = max(60, btn_h)
+            btn_h  = min(int(self._h * 0.22), (available_h - (n_all - 1) * 16) // n_all)
+            btn_h  = max(52, btn_h)
             btn_w  = int(self._w * 0.78)
-            gap_v  = max(16, (available_h - n * btn_h) // (n + 1))
+            gap_v  = max(12, (available_h - n_all * btn_h) // (n_all + 1))
             y_start = btn_area_top + gap_v
             font = self._best_font_for(longest, btn_w)
             for i, v in enumerate(layouts):
@@ -306,19 +307,31 @@ class PygameUI:
                 btns.append(_Btn((x, y, btn_w, btn_h),
                                  f"{v} PHOTO{'S' if v > 1 else ''}",
                                  c, font=font, action="start_session", data=v, radius=20))
+            if gif_enabled:
+                gif_y = y_start + n * (btn_h + gap_v)
+                btns.append(_Btn((x, gif_y, btn_w, btn_h), "GIF ANIME",
+                                 (148, 103, 189), font=font,
+                                 action="start_gif", data=None, radius=20))
         else:
-            # Paysage : boutons côte à côte
-            margin, gap = 40, 30
-            btn_w = (self._w - 2 * margin - gap * (n - 1)) // n
+            all_labels = [f"{v} PHOTO{'S' if v > 1 else ''}" for v in layouts]
+            if gif_enabled:
+                all_labels.append("GIF")
+            margin, gap = 30, 20
+            btn_w = (self._w - 2*margin - gap*(n_all-1)) // n_all
             btn_h = int(self._h * 0.55)
-            y = self._h // 2 - btn_h // 2 - 20
-            font = self._best_font_for(longest, btn_w)
+            y     = self._h // 2 - btn_h // 2 - 20
+            font  = self._best_font_for(max(all_labels, key=len), btn_w)
             for i, v in enumerate(layouts):
                 x = margin + i * (btn_w + gap)
                 c = _ACCENT if v == selected else _BLUE
                 btns.append(_Btn((x, y, btn_w, btn_h),
                                  f"{v} PHOTO{'S' if v > 1 else ''}",
                                  c, font=font, action="start_session", data=v, radius=20))
+            if gif_enabled:
+                gx = margin + n * (btn_w + gap)
+                btns.append(_Btn((gx, y, btn_w, btn_h), "GIF",
+                                 (148, 103, 189), font=font,
+                                 action="start_gif", data=None, radius=20))
 
         self._buttons = btns
 
@@ -354,11 +367,18 @@ class PygameUI:
         self._info["smile"]     = True
         self._buttons = []
 
+    def show_gif_frame_counter(self, current: int, total: int):
+        """Affiche 'Image N/total' pendant la capture rapide GIF."""
+        self._info["gif_counter"]  = f"Image {current}/{total}"
+        self._info["countdown"]    = 0
+        self._info["smile"]        = False
+
     def show_capture_result(self, path: str, remaining: int):
         self._info["last_photo"] = path
         self._info["remaining"]  = remaining
         self._info["countdown"]  = 0
         self._info["smile"]      = False
+        self._info["gif_counter"] = ""
 
     def show_processing(self, step: str):
         self._screen_name = "processing"
@@ -1069,11 +1089,15 @@ class PygameUI:
         total = self._info.get("total", 0)
         self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
-        cd    = self._info.get("countdown", 0)
-        smile = self._info.get("smile", False)
+        cd          = self._info.get("countdown", 0)
+        smile       = self._info.get("smile", False)
+        gif_counter = self._info.get("gif_counter", "")
         if smile:
-            # Message "Souriez !" juste avant le déclenchement
             self._shadow_txt("Souriez !", "xl", _ACCENT,
+                             self._w // 2, self._h // 2, cx=True)
+        elif gif_counter:
+            # Mode GIF : compteur de frames "Image 3/6"
+            self._shadow_txt(gif_counter, "lg", _ACCENT,
                              self._w // 2, self._h // 2, cx=True)
         elif cd > 0:
             self._shadow_txt(str(cd), "xxl", _WHITE, self._w // 2, self._h // 2, cx=True)

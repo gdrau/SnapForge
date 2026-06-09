@@ -17,6 +17,7 @@ class State(Enum):
     COUNTDOWN = auto()
     CAPTURE = auto()
     PROCESSING = auto()
+    GIF_PROCESSING = auto()    # génération du GIF animé
     REVIEW = auto()
     PRINT_WAIT = auto()
     QR_DISPLAY = auto()
@@ -26,22 +27,25 @@ class State(Enum):
 
 class Session:
 
-    def __init__(self, layout_count: int, raw_dir: str, final_dir: str):
+    def __init__(self, layout_count: int, raw_dir: str, final_dir: str,
+                 is_gif_mode: bool = False):
         self.layout_count = layout_count
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.session_dir = Path(raw_dir) / self.timestamp
+        self.is_gif_mode  = is_gif_mode
+        self.timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir  = Path(raw_dir) / self.timestamp
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        self.final_dir = Path(final_dir)
+        self.final_dir    = Path(final_dir)
         self.final_dir.mkdir(parents=True, exist_ok=True)
 
-        existing = len(list(self.final_dir.glob("snapforge_*.jpg")))
-        self._number = existing + 1
+        existing       = len(list(self.final_dir.glob("snapforge_*.jpg")))
+        self._number   = existing + 1
 
-        self.raw_photos: List[str] = []
+        self.raw_photos:       List[str] = []
         self.processed_photos: List[str] = []
-        self.final_photo: Optional[str] = None
-        self.upload_url: Optional[str] = None
-        self.error: Optional[str] = None
+        self.final_photo:      Optional[str] = None
+        self.gif_path:         Optional[str] = None   # chemin du GIF généré
+        self.upload_url:       Optional[str] = None
+        self.error:            Optional[str] = None
 
     @property
     def final_filename(self) -> str:
@@ -67,17 +71,18 @@ class Session:
 class StateMachine:
 
     def __init__(self, config, camera, lights, buttons, composer, ai_processor,
-                 uploader, printer, qr_gen, ui):
-        self._config = config
-        self._camera = camera
-        self._lights = lights
-        self._buttons = buttons
-        self._composer = composer
-        self._ai = ai_processor
-        self._uploader = uploader
-        self._printer = printer
-        self._qr = qr_gen
-        self._ui = ui
+                 uploader, printer, qr_gen, ui, gif_maker=None):
+        self._config     = config
+        self._camera     = camera
+        self._lights     = lights
+        self._buttons    = buttons
+        self._composer   = composer
+        self._ai         = ai_processor
+        self._uploader   = uploader
+        self._printer    = printer
+        self._qr         = qr_gen
+        self._ui         = ui
+        self._gif_maker  = gif_maker
 
         self._state = State.IDLE
         self._session: Optional[Session] = None
@@ -127,6 +132,7 @@ class StateMachine:
             State.PROCESSING:    self._enter_processing,
             State.REVIEW:        self._enter_review,
             State.PRINT_WAIT:    self._enter_print_wait,
+            State.GIF_PROCESSING: self._enter_gif_processing,
             State.QR_DISPLAY:    self._enter_qr_display,
             State.ADMIN:         self._enter_admin,
             State.ERROR:         self._enter_error,
@@ -142,7 +148,11 @@ class StateMachine:
 
     def _enter_choose_format(self):
         self._lights.sequence_blink()
-        self._ui.show_choose_format([self._option_a, self._option_b], self._option_a)
+        gif_enabled = bool(self._config.get("gif.enabled", True) and self._gif_maker)
+        self._ui.show_choose_format(
+            [self._option_a, self._option_b], self._option_a,
+            gif_enabled=gif_enabled
+        )
 
     def _enter_preview(self):
         self._lights.sequence_on()
@@ -171,14 +181,28 @@ class StateMachine:
         try:
             self._camera.capture(path)
             self._session.raw_photos.append(path)
-            logger.info(f"Photo {len(self._session.raw_photos)}/{self._session.layout_count}: {path}")
+            n = len(self._session.raw_photos)
+            total = self._session.layout_count
+            logger.info(f"Photo {n}/{total}: {path}")
             self._ui.show_capture_result(path, self._session.remaining)
-            time.sleep(0.8)
+
             if self._session.is_complete:
                 self._camera.stop_preview()
-                self._go(State.PROCESSING)
+                if self._session.is_gif_mode:
+                    self._go(State.GIF_PROCESSING)
+                else:
+                    self._go(State.PROCESSING)
             else:
-                self._go(State.COUNTDOWN)
+                if self._session.is_gif_mode:
+                    # Capture rapide : délai court, pas de compte à rebours
+                    delay = self._config.get("gif.delay_between_frames_ms", 300) / 1000
+                    self._ui.show_gif_frame_counter(n, total)
+                    time.sleep(delay)
+                    self._go(State.CAPTURE)
+                else:
+                    time.sleep(0.8)
+                    self._go(State.COUNTDOWN)
+
         except Exception as e:
             logger.exception("Erreur capture")
             self._session.error = str(e)
@@ -258,6 +282,51 @@ class StateMachine:
         # Upload géré dans _enter_qr_display
         self._go(State.QR_DISPLAY)
 
+    def _enter_gif_processing(self):
+        """Génère le GIF animé depuis les frames brutes, upload, QR code."""
+        self._lights.sequence_blink()
+        self._ui.show_processing("Création du GIF...")
+        threading.Thread(target=self._do_gif_processing, daemon=True).start()
+
+    def _do_gif_processing(self):
+        try:
+            if not self._gif_maker or not self._gif_maker.enabled:
+                logger.error("GifMaker indisponible")
+                self._session.error = "Module GIF indisponible"
+                self._go(State.ERROR)
+                return
+
+            frames = self._session.raw_photos
+            gif_path = self._gif_maker.gif_path_for(
+                self._session.timestamp, self._session._number
+            )
+            self._ui.show_processing("Création du GIF...")
+            result = self._gif_maker.make_gif(frames, gif_path)
+
+            if not result:
+                self._session.error = "Génération GIF échouée"
+                self._go(State.ERROR)
+                return
+
+            self._session.gif_path = result
+
+            # Miniature pour le carrousel
+            thumb_path = self._gif_maker.thumb_path_for(
+                self._session.timestamp, self._session._number
+            )
+            self._gif_maker.make_thumbnail(result, thumb_path)
+
+            # Utiliser le GIF comme "final_photo" pour l'affichage du résultat
+            # (on affiche la première frame via la miniature)
+            self._session.final_photo = thumb_path
+
+            self._go(State.QR_DISPLAY)
+
+        except Exception as e:
+            logger.exception("Erreur GIF processing")
+            self._session.error = str(e)
+            self._go(State.ERROR)
+
     def _enter_qr_display(self):
         """
         1. Upload vers le cloud (synchrone) → obtient l'URL réelle
@@ -272,14 +341,20 @@ class StateMachine:
         upload_url = None
 
         # --- Étape 1 : upload (pendant lequel l'UI montre "Envoi en cours...") ---
+        # En mode GIF : uploader le fichier .gif
         if self._uploader.enabled:
             if hasattr(self._ui, 'show_uploading'):
                 self._ui.show_uploading()
             try:
-                upload_url = self._uploader.upload(
-                    self._session.final_photo,
-                    self._session.final_filename
-                )
+                if self._session.is_gif_mode and self._session.gif_path:
+                    from pathlib import Path as _P
+                    gif_filename = _P(self._session.gif_path).name
+                    upload_url   = self._uploader.upload(self._session.gif_path, gif_filename)
+                else:
+                    upload_url = self._uploader.upload(
+                        self._session.final_photo,
+                        self._session.final_filename
+                    )
                 self._session.upload_url = upload_url
                 if upload_url:
                     logger.info(f"Upload OK → URL QR : {upload_url}")
@@ -485,6 +560,11 @@ class StateMachine:
                 count = data if isinstance(data, int) else self._option_a
                 self._start_session(count)
 
+        elif action == "start_gif":
+            if self._state in (State.IDLE, State.CHOOSE_FORMAT):
+                frames = int(self._config.get("gif.frames_count", 6))
+                self._start_session(frames, is_gif=True)
+
         elif action == "start_countdown":
             if self._state == State.PREVIEW:
                 self._go(State.COUNTDOWN)
@@ -509,8 +589,9 @@ class StateMachine:
 
     # ------------------------------------------------------------------
 
-    def _start_session(self, layout_count: int):
-        self._session = Session(layout_count, self._raw_dir, self._final_dir)
+    def _start_session(self, layout_count: int, is_gif: bool = False):
+        self._session = Session(layout_count, self._raw_dir, self._final_dir,
+                                is_gif_mode=is_gif)
         self._go(State.PREVIEW)
 
     def _schedule_return(self, delay: float):

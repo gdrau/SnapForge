@@ -68,21 +68,23 @@ def main() -> None:
     from camera.picamera2_camera import create_camera
     from processing.composer import Composer
     from processing.ai_background import AIBackgroundProcessor
+    from processing.gif_maker import GifMaker
     from cloud.uploader import UploadManager
     from print.cups_printer import CupsPrinter
     from qr.qr_generator import QRGenerator
     from ui.pygame_ui import PygameUI
     from state_machine import StateMachine
 
-    lights   = LightManager(config)
-    buttons  = ButtonManager(config)
-    camera   = create_camera(config)
-    composer = Composer(config)
-    ai_proc  = AIBackgroundProcessor(config)
-    uploader = UploadManager(config)
-    printer  = CupsPrinter(config)
-    qr_gen   = QRGenerator(config)
-    ui       = PygameUI(config)
+    lights    = LightManager(config)
+    buttons   = ButtonManager(config)
+    camera    = create_camera(config)
+    composer  = Composer(config)
+    ai_proc   = AIBackgroundProcessor(config)
+    gif_maker = GifMaker(config)
+    uploader  = UploadManager(config)
+    printer   = CupsPrinter(config)
+    qr_gen    = QRGenerator(config)
+    ui        = PygameUI(config)
 
     fsm = StateMachine(
         config=config,
@@ -95,6 +97,7 @@ def main() -> None:
         printer=printer,
         qr_gen=qr_gen,
         ui=ui,
+        gif_maker=gif_maker,
     )
     ui.set_touch_callback(fsm.handle_touch)
 

@@ -93,9 +93,11 @@ _TABLE_P = {
 class CarouselManager:
 
     def __init__(self, config):
-        self._config  = config
-        self._source  = Path(config.get("photos.final_dir", "Photo/final"))
-        self._thumbs: List["pygame.Surface"] = []
+        self._config       = config
+        self._source       = Path(config.get("photos.final_dir",    "Photo/final"))
+        self._thumb_source = Path(config.get("gif.thumbnails_dir",  "Photo/thumbnails"))
+        self._thumbs: List["pygame.Surface"] = []  # (surface, is_gif)
+        self._is_gif: List[bool] = []
         self._lock     = threading.Lock()
         self._offset   = 0
         self._t_last   = time.monotonic()
@@ -160,13 +162,17 @@ class CarouselManager:
             if self._cache_key == key and self._cache_items:
                 return [(p, s, x + zx, y + zy) for p, s, x, y in self._cache_items]
 
-            photos = [self._thumbs[(self._offset + i) % len(self._thumbs)]
-                      for i in range(n)]
+            total = len(self._thumbs)
+            photos  = [self._thumbs [(self._offset + i) % total] for i in range(n)]
+            gif_flags = [
+                (self._is_gif[(self._offset + i) % total] if self._is_gif else False)
+                for i in range(n)
+            ]
 
             if self.mode == "simple":
-                items = self._layout_simple(photos, zw, zh, is_portrait)
+                items = self._layout_simple(photos, zw, zh, is_portrait, gif_flags)
             else:
-                items = self._layout_table(photos, zw, zh, is_portrait)
+                items = self._layout_table(photos, zw, zh, is_portrait, gif_flags)
 
             self._cache_items = items
             self._cache_key   = key
@@ -184,33 +190,40 @@ class CarouselManager:
         if not (_PIL_OK and _PYGAME_OK):
             self._loading = False
             return
-        if not self._source.exists():
+
+        # Scanner les photos finales ET les miniatures GIF
+        all_files: list = []
+        for src, is_gif in [(self._source, False), (self._thumb_source, True)]:
+            if src.exists():
+                try:
+                    for p in src.glob("*.jpg"):
+                        if p.is_file():
+                            all_files.append((p, is_gif))
+                except Exception as e:
+                    logger.error(f"Carousel scan {src}: {e}")
+
+        if not all_files:
             self._loading = False
             return
 
-        try:
-            files = sorted(
-                [p for p in self._source.glob("*.jpg") if p.is_file()],
-                key=lambda p: p.stat().st_mtime, reverse=True,
-            )
-        except Exception as e:
-            logger.error(f"Carousel scan: {e}")
-            self._loading = False
-            return
+        # Trier par date de modification (plus récent en premier)
+        all_files.sort(key=lambda t: t[0].stat().st_mtime, reverse=True)
 
-        new_thumbs = []
-        for path in files[:15]:
+        new_thumbs  = []
+        new_is_gif  = []
+        for path, is_gif in all_files[:15]:
             try:
                 img = PILImage.open(path).convert("RGB")
                 img.thumbnail((_THUMB_MAX, _THUMB_MAX), PILImage.LANCZOS)
-                # Miniature BRUTE sans bordure (la bordure est ajoutée à l'affichage)
                 surf = pygame.image.fromstring(img.tobytes(), img.size, "RGB")
                 new_thumbs.append(surf)
+                new_is_gif.append(is_gif)
             except Exception as e:
                 logger.debug(f"Carousel: ignore {path.name}: {e}")
 
         with self._lock:
             self._thumbs      = new_thumbs
+            self._is_gif      = new_is_gif
             self._cache_items = []
             self._cache_key   = None
 
@@ -232,12 +245,11 @@ class CarouselManager:
         return pygame.transform.smoothscale(surf, (tw, th))
 
     @staticmethod
-    def _add_border_and_shadow(scaled: "pygame.Surface"):
+    @staticmethod
+    def _add_border_and_shadow(scaled: "pygame.Surface", is_gif: bool = False):
         """
-        Crée :
-          - photo_surf : scaled + cadre blanc (SRCALPHA)
-          - shadow_surf: ombre de même taille (SRCALPHA)
-        La bordure est calculée APRÈS redimensionnement → toujours visible.
+        Cadre blanc + ombre.
+        Si is_gif=True, ajoute un badge "GIF" violet dans le coin inférieur droit.
         """
         pw, ph  = scaled.get_size()
         border  = max(6, int(min(pw, ph) * 0.068))
@@ -248,6 +260,23 @@ class CarouselManager:
         pygame.draw.rect(photo, (252, 252, 252, 255), (0, 0, fw, fh))
         photo.blit(scaled, (border, border))
 
+        # Badge GIF
+        if is_gif:
+            try:
+                font = pygame.font.SysFont("dejavusans", max(10, int(min(fw, fh) * 0.12)))
+                badge_surf = font.render("GIF", True, (255, 255, 255))
+                bw, bh = badge_surf.get_size()
+                pad = max(2, bw // 6)
+                bg  = pygame.Surface((bw + pad*2, bh + pad), pygame.SRCALPHA)
+                pygame.draw.rect(bg, (148, 103, 189, 220), (0, 0, bw + pad*2, bh + pad),
+                                 border_radius=3)
+                bg.blit(badge_surf, (pad, pad // 2))
+                bx = fw - bg.get_width() - border
+                by = fh - bg.get_height() - border
+                photo.blit(bg, (bx, by))
+            except Exception:
+                pass
+
         shadow = pygame.Surface((fw, fh), pygame.SRCALPHA)
         shadow.fill((0, 0, 0, 0))
         pygame.draw.rect(shadow, (0, 0, 0, 88), (0, 0, fw, fh))
@@ -256,7 +285,7 @@ class CarouselManager:
 
     # --- Layouts --------------------------------------------------------
 
-    def _layout_simple(self, photos, zw, zh, is_portrait):
+    def _layout_simple(self, photos, zw, zh, is_portrait, gif_flags=None):
         """
         Mode simple : UNE photo qui remplit TOUTE la zone disponible.
         Ratio conservé, pas de cap à 1.0 → la photo est aussi grande que la zone.
@@ -291,9 +320,16 @@ class CarouselManager:
         shadow.fill((0, 0, 0, 0))
         pygame.draw.rect(shadow, (0, 0, 0, 65), (0, 0, fw, fh))
 
+        # Badge GIF si première image est un GIF
+        is_gif = (gif_flags[0] if gif_flags else False)
+        if is_gif:
+            photo, shadow = self._add_border_and_shadow(
+                pygame.transform.smoothscale(surf, (nw, nh)), is_gif=True)
+            fw, fh = photo.get_size()
+
         return [(photo, shadow, (zw - fw) // 2, (zh - fh) // 2)]
 
-    def _layout_table(self, photos, zw, zh, is_portrait):
+    def _layout_table(self, photos, zw, zh, is_portrait, gif_flags=None):
         """
         Boîte normalisée : photo redimensionnée pour tenir dans (box_w × box_h)
         QUELLE QUE SOIT son orientation (portrait ou paysage).
@@ -320,8 +356,9 @@ class CarouselManager:
 
         items = []
 
-        for surf, (cx_r, cy_r, raw_angle, sf) in zip(photos, table):
-            angle = max(-max_rot, min(max_rot, raw_angle))
+        for idx, (surf, (cx_r, cy_r, raw_angle, sf)) in enumerate(zip(photos, table)):
+            angle  = max(-max_rot, min(max_rot, raw_angle))
+            is_gif = (gif_flags[idx] if gif_flags and idx < len(gif_flags) else False)
 
             # 1. Redimensionner dans la boîte CARRÉE
             #    _fit_in_box(surf, S, S) → longue dimension = S, ratio conservé
@@ -332,7 +369,7 @@ class CarouselManager:
                 continue
 
             # 2. Cadre blanc + ombre
-            photo_full, shadow_full = self._add_border_and_shadow(scaled)
+            photo_full, shadow_full = self._add_border_and_shadow(scaled, is_gif=is_gif)
             fw, fh = photo_full.get_size()
 
             # 3. Rotation LISSÉE (rotozoom = interpolation bilinéaire → pas de crénelage)
