@@ -605,11 +605,11 @@ class PygameUI:
                 {"type": "cycle", "label": "Template 3 photos",  "key": "tpl_3", "values": tpls or ["portrait_1photo"], "fmt": fmt_tpl},
                 {"type": "cycle", "label": "Template 4 photos",  "key": "tpl_4", "values": tpls or ["landscape_4photos"], "fmt": fmt_tpl},
                 {"type": "sep"},
-                {"type": "text",  "label": "Titre",              "key": "event_title"},
+                {"type": "text",  "label": "Titre",              "key": "event_title",       "wide": True},
                 {"type": "cycle", "label": "Taille titre",       "key": "event_title_size",
                  "values": [28, 36, 44, 52, 60, 72, 80],
                  "fmt": lambda v: f"{v} pt"},
-                {"type": "text",  "label": "Description",        "key": "event_description"},
+                {"type": "text",  "label": "Description",        "key": "event_description", "wide": True},
                 {"type": "cycle", "label": "Taille description", "key": "event_desc_size",
                  "values": [12, 16, 20, 24, 28, 36, 44, 50],
                  "fmt": lambda v: f"{v} pt"},
@@ -700,15 +700,25 @@ class PygameUI:
                 continue
 
             if itype == "text":
-                key = item["key"]
-                # no_draw=True : zone de clic invisible — le rendu du champ texte
-                # est fait dans _r_admin pour éviter que le bouton n'écrase le texte saisi
-                btns.append(_Btn(
-                    (val_x, y + (ROW_H - 36) // 2, val_w, 36), "",
-                    _PANEL, action="admin_text_activate", data=key, radius=6,
-                    no_draw=True,
-                ))
-                y += ROW_H
+                key     = item["key"]
+                is_wide = item.get("wide", False)
+                if is_wide:
+                    # Champ pleine largeur sur 2 lignes :
+                    # ligne 1 = label, ligne 2 = champ de saisie
+                    field_h = ROW_H + 8
+                    btns.append(_Btn(
+                        (margin, y + ROW_H, panel_w, field_h), "",
+                        _PANEL, action="admin_text_activate", data=key, radius=6,
+                        no_draw=True,
+                    ))
+                    y += ROW_H + field_h + 6   # 2 lignes + espacement
+                else:
+                    btns.append(_Btn(
+                        (val_x, y + (ROW_H - 36) // 2, val_w, 36), "",
+                        _PANEL, action="admin_text_activate", data=key, radius=6,
+                        no_draw=True,
+                    ))
+                    y += ROW_H
                 continue
 
             y += ROW_H
@@ -968,20 +978,28 @@ class PygameUI:
         self._info["settings"] = settings
         self._build_admin(settings)
 
+    @staticmethod
+    def _item_height(item: dict) -> int:
+        """Hauteur en pixels d'un item admin."""
+        itype = item.get("type")
+        if itype == "sep":
+            return 12
+        if itype == "text" and item.get("wide", False):
+            return ROW_H + (ROW_H + 8) + 6   # label + champ + gap
+        return ROW_H
+
     def _admin_content_height(self, items: list) -> int:
         """Hauteur totale du contenu scrollable pour une liste d'items."""
         settings = self._info.get("settings", {})
         h = 8
         for item in items:
             itype = item.get("type")
-            if itype == "sep":
-                h += 12
-            elif itype == "gpio_info":
+            if itype == "gpio_info":
                 gpio_cfg = settings.get("_gpio_config", {})
                 gpio_log = settings.get("_gpio_log", [])
                 h += ROW_H * (len(gpio_cfg) + 2) + min(len(gpio_log), 6) * 26
             else:
-                h += ROW_H
+                h += self._item_height(item)
         return h
 
     def _admin_bottom_reserved(self) -> int:
@@ -996,14 +1014,12 @@ class PygameUI:
             if i == self._admin_selection:
                 break
             itype = item.get("type")
-            if itype == "sep":
-                y += 12
-            elif itype == "gpio_info":
+            if itype == "gpio_info":
                 gpio_cfg = settings.get("_gpio_config", {})
                 gpio_log = settings.get("_gpio_log", [])
                 y += ROW_H * (len(gpio_cfg) + 2) + min(len(gpio_log), 6) * 26
             else:
-                y += ROW_H
+                y += self._item_height(item)
 
         bottom_reserved = self._admin_bottom_reserved()
         visible_bottom  = self._h - bottom_reserved
@@ -1422,8 +1438,9 @@ class PygameUI:
                 y += ROW_H * (len(gpio_cfg) + 2)
                 continue
 
-            if y + ROW_H < HDR_H or y > self._h:
-                y += ROW_H
+            item_h = self._item_height(item)
+            if y + item_h < HDR_H or y > self._h:
+                y += item_h
                 continue
 
             cy = y + ROW_H // 2
@@ -1459,23 +1476,46 @@ class PygameUI:
                 continue
 
             if itype == "text":
-                key = item["key"]
+                key       = item["key"]
                 is_active = self._text_editing == key
-                self._txt(item.get("label", ""), "xs", _LGRAY, margin, cy - 1)
-                fx, fy = val_x, y + (ROW_H - 36) // 2
-                fw, fh = val_w, 36
-                pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
-                                 (fx, fy, fw, fh), border_radius=6)
-                val = str(settings.get(key, ""))
-                display = val
-                font = self._fonts["xs"]
-                while font.size(display)[0] > fw - 16 and display:
-                    display = display[1:]
-                if is_active and int(time.time() * 2) % 2 == 0:
-                    display += "|"
-                ts = font.render(display, True, _WHITE)
-                self._screen.blit(ts, (fx + 8, fy + (fh - ts.get_height()) // 2))
-                y += ROW_H
+                is_wide   = item.get("wide", False)
+                font      = self._fonts["xs"]
+                val       = str(settings.get(key, ""))
+
+                if is_wide:
+                    # Ligne 1 : label
+                    self._txt(item.get("label", ""), "xs", _LGRAY, margin, y + ROW_H // 2)
+                    # Ligne 2 : champ pleine largeur
+                    field_h = ROW_H + 8
+                    fx, fy = margin, y + ROW_H
+                    fw, fh = panel_w, field_h
+                    pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
+                                     (fx, fy, fw, fh), border_radius=6)
+                    # Texte : tronquer depuis le début pour afficher la fin
+                    display = val
+                    max_fw  = fw - 16
+                    while font.size(display)[0] > max_fw and display:
+                        display = display[1:]
+                    if is_active and int(time.time() * 2) % 2 == 0:
+                        display += "|"
+                    ts = font.render(display, True, _WHITE)
+                    self._screen.blit(ts, (fx + 8, fy + (fh - ts.get_height()) // 2))
+                    y += ROW_H + field_h + 6
+                else:
+                    # Champ standard : label à gauche, champ à droite
+                    self._txt(item.get("label", ""), "xs", _LGRAY, margin, cy - 1)
+                    fx, fy = val_x, y + (ROW_H - 36) // 2
+                    fw, fh = val_w, 36
+                    pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
+                                     (fx, fy, fw, fh), border_radius=6)
+                    display = val
+                    while font.size(display)[0] > fw - 16 and display:
+                        display = display[1:]
+                    if is_active and int(time.time() * 2) % 2 == 0:
+                        display += "|"
+                    ts = font.render(display, True, _WHITE)
+                    self._screen.blit(ts, (fx + 8, fy + (fh - ts.get_height()) // 2))
+                    y += ROW_H
                 continue
 
             y += ROW_H
