@@ -82,7 +82,9 @@ plugins:
   qr_on_result: true               # Afficher QR code après la photo
 
 home_carousel:
-  enabled: true                    # Carrousel de photos sur l'écran d'accueil
+  enabled: true
+  animate_gifs: true         # Animer les GIF dans le carrousel
+  max_animated_gifs: 2       # Max de GIF animés simultanément (perf Pi)                    # Carrousel de photos sur l'écran d'accueil
   mode: "table"                    # "table" (photos éparses) ou "simple" (une à la fois)
   interval_seconds: 4              # Délai entre les changements de photo
   max_photos_displayed: 5          # Nombre max de photos visibles (mode table)

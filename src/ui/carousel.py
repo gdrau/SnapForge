@@ -1,19 +1,15 @@
 """
-Carrousel de photos sur l'écran d'accueil.
-Deux modes selon l'orientation de l'écran, chargement non bloquant.
-
-Principe de dimensionnement :
-  1. Charger miniature brute
-  2. La faire rentrer dans une boîte (box_w × box_h) QUELLE QUE SOIT son orientation
-  3. Ajouter cadre blanc APRÈS redimensionnement
-  4. Tourner l'ensemble (photo + cadre + ombre) d'un seul bloc
+Carrousel de photos et GIFs sur l'écran d'accueil.
+- Photos : images fixes avec bordure et ombre
+- GIFs   : animation en boucle, frames chargées en arrière-plan
+Chargement non bloquant, timing global sans état par item.
 """
 import logging
 import math
 import threading
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +25,13 @@ try:
 except ImportError:
     _PIL_OK = False
 
-_THUMB_MAX = 600   # taille max miniature — plus grande = meilleure qualité en mode simple
+_THUMB_MAX = 600   # miniature brute (qualité mode simple)
+_GIF_FRAME_MAX = 240   # frames GIF pour le carrousel (plus petites)
 
 # ---------------------------------------------------------------------------
-# Dispositions selon l'orientation de la ZONE
-# (cx_ratio, cy_ratio, angle_deg, scale_factor)
-# Angles bornés portrait ≤5°, paysage ≤8° — effet naturel non caricatural
+# Dispositions table
 # ---------------------------------------------------------------------------
 
-# Paysage : ligne aérée de photos
 _TABLE_L = {
     1: [(0.50, 0.50,  0.0, 1.00)],
     2: [(0.30, 0.50, -6.0, 1.00), (0.70, 0.50,  5.0, 1.00)],
@@ -65,7 +59,6 @@ _TABLE_L = {
         (0.95, 0.50,  8.0, 0.81)],
 }
 
-# Portrait : 2 côte à côte, ou 2×2, ou 2×2+1
 _TABLE_P = {
     1: [(0.50, 0.50,  0.0, 1.00)],
     2: [(0.27, 0.50, -4.0, 1.00), (0.73, 0.50,  3.0, 1.00)],
@@ -91,13 +84,18 @@ _TABLE_P = {
 
 
 class CarouselManager:
+    """
+    Carrousel photos + GIFs animés.
+    Structure par item : {"frames": [Surface], "durations": [float], "is_gif": bool}
+    Timing GIF : horloge globale + modulo total durée (pas d'état par item).
+    """
 
     def __init__(self, config):
         self._config       = config
         self._source       = Path(config.get("photos.final_dir",    "Photo/final"))
         self._thumb_source = Path(config.get("gif.thumbnails_dir",  "Photo/thumbnails"))
-        self._thumbs: List["pygame.Surface"] = []  # (surface, is_gif)
-        self._is_gif: List[bool] = []
+        self._gif_dir      = Path(config.get("gif.output_dir",      "Photo/gifs"))
+        self._items: List[dict] = []     # {"frames", "durations", "is_gif"}
         self._lock     = threading.Lock()
         self._offset   = 0
         self._t_last   = time.monotonic()
@@ -108,7 +106,7 @@ class CarouselManager:
         if self.enabled:
             self._start_load()
 
-    # --- Propriétés lues depuis config ----------------------------------
+    # --- Propriétés ---
 
     @property
     def enabled(self) -> bool:
@@ -122,11 +120,23 @@ class CarouselManager:
     def interval(self) -> float:
         return float(self._config.get("home_carousel.interval_seconds", 4))
 
-    # --- API publique ----------------------------------------------------
+    @property
+    def max_n(self) -> int:
+        return min(9, int(self._config.get("home_carousel.max_photos_displayed", 9)))
+
+    @property
+    def animate_gifs(self) -> bool:
+        return bool(self._config.get("home_carousel.animate_gifs", True))
+
+    @property
+    def max_animated_gifs(self) -> int:
+        return int(self._config.get("home_carousel.max_animated_gifs", 2))
+
+    # --- API publique ---
 
     def has_photos(self) -> bool:
         with self._lock:
-            return len(self._thumbs) > 0
+            return len(self._items) > 0
 
     def refresh(self):
         if self.enabled:
@@ -138,47 +148,81 @@ class CarouselManager:
         if time.monotonic() - self._t_last >= self.interval:
             self._t_last = time.monotonic()
             with self._lock:
-                if len(self._thumbs) > 1:
-                    self._offset = (self._offset + 1) % len(self._thumbs)
+                if len(self._items) > 1:
+                    self._offset = (self._offset + 1) % len(self._items)
                     self._cache_items = []
                     self._cache_key   = None
 
     def get_render_items(self, zx: int, zy: int, zw: int, zh: int,
                          is_portrait: bool = False) -> list:
-        """
-        Retourne [(photo_surf, shadow_surf, abs_x, abs_y), …]
-        Les surfaces sont déjà redimensionnées, bordurées et tournées.
-        """
         with self._lock:
-            if not self._thumbs:
+            if not self._items:
                 return []
 
-            # Nombre max : 9 photos pour les deux orientations (configurable via admin)
-            cfg_max = int(self._config.get("home_carousel.max_photos_displayed", 9))
-            max_n   = min(9, cfg_max)
-            n       = min(max_n, len(self._thumbs))
-            key = (self._offset, self.mode, n, zw, zh, is_portrait)
+            n        = min(self.max_n, len(self._items))
+            total    = len(self._items)
+            now      = time.monotonic()
+            animate  = self.animate_gifs
+            max_anim = self.max_animated_gifs
+            anim_cnt = 0
+
+            # Calculer la frame courante pour chaque item
+            current_surfs = []
+            gif_flags     = []
+
+            for i in range(n):
+                item      = self._items[(self._offset + i) % total]
+                frames    = item.get("frames", [])
+                durs      = item.get("durations", [1.0])
+                is_gif    = item.get("is_gif", False)
+                is_anim   = is_gif and len(frames) > 1 and animate and anim_cnt < max_anim
+
+                if not frames:
+                    continue
+
+                if is_anim:
+                    # Timing global : décalage de 0.7s par GIF pour ne pas être synchrones
+                    total_dur = max(0.001, sum(durs))
+                    phase     = (now + i * 0.7) % total_dur
+                    acc, fidx = 0.0, 0
+                    for j, d in enumerate(durs):
+                        if phase < acc + d:
+                            fidx = j
+                            break
+                        acc += d
+                    else:
+                        fidx = len(frames) - 1
+                    current_surfs.append(frames[fidx % len(frames)])
+                    anim_cnt += 1
+                else:
+                    current_surfs.append(frames[0])
+
+                gif_flags.append(is_gif)
+
+            if not current_surfs:
+                return []
+
+            real_n = len(current_surfs)
+            # Clé de cache : inclut le temps arrondi si des GIF sont animés
+            time_key = round(now * 8) if (animate and anim_cnt > 0) else 0
+            key = (self._offset, self.mode, real_n, zw, zh, is_portrait, time_key)
 
             if self._cache_key == key and self._cache_items:
                 return [(p, s, x + zx, y + zy) for p, s, x, y in self._cache_items]
 
-            total = len(self._thumbs)
-            photos  = [self._thumbs [(self._offset + i) % total] for i in range(n)]
-            gif_flags = [
-                (self._is_gif[(self._offset + i) % total] if self._is_gif else False)
-                for i in range(n)
-            ]
-
             if self.mode == "simple":
-                items = self._layout_simple(photos, zw, zh, is_portrait, gif_flags)
+                items = self._layout_simple(current_surfs, zw, zh, is_portrait, gif_flags)
             else:
-                items = self._layout_table(photos, zw, zh, is_portrait, gif_flags)
+                items = self._layout_table(current_surfs, zw, zh, is_portrait, gif_flags)
 
-            self._cache_items = items
-            self._cache_key   = key
+            # Ne pas cacher si des GIF sont animés (mise à jour chaque ~125ms)
+            if anim_cnt == 0:
+                self._cache_items = items
+                self._cache_key   = key
+
             return [(p, s, x + zx, y + zy) for p, s, x, y in items]
 
-    # --- Chargement background ------------------------------------------
+    # --- Chargement ---
 
     def _start_load(self):
         if self._loading:
@@ -191,7 +235,7 @@ class CarouselManager:
             self._loading = False
             return
 
-        # Scanner les photos finales ET les miniatures GIF
+        # Scanner photos finales + miniatures GIF
         all_files: list = []
         for src, is_gif in [(self._source, False), (self._thumb_source, True)]:
             if src.exists():
@@ -206,173 +250,179 @@ class CarouselManager:
             self._loading = False
             return
 
-        # Trier par date de modification (plus récent en premier)
         all_files.sort(key=lambda t: t[0].stat().st_mtime, reverse=True)
 
-        new_thumbs  = []
-        new_is_gif  = []
+        new_items = []
         for path, is_gif in all_files[:15]:
             try:
+                if is_gif:
+                    # Chercher le GIF source correspondant à la miniature
+                    gif_path = self._find_gif(path)
+                    if gif_path:
+                        frames, durs = self._load_gif_frames(gif_path)
+                        if frames:
+                            new_items.append({
+                                "frames":    frames,
+                                "durations": durs,
+                                "is_gif":    True,
+                            })
+                            continue
+                # Photo fixe (ou GIF sans source)
                 img = PILImage.open(path).convert("RGB")
                 img.thumbnail((_THUMB_MAX, _THUMB_MAX), PILImage.LANCZOS)
                 surf = pygame.image.fromstring(img.tobytes(), img.size, "RGB")
-                new_thumbs.append(surf)
-                new_is_gif.append(is_gif)
+                new_items.append({
+                    "frames":    [surf],
+                    "durations": [1.0],
+                    "is_gif":    is_gif,
+                })
             except Exception as e:
                 logger.debug(f"Carousel: ignore {path.name}: {e}")
 
         with self._lock:
-            self._thumbs      = new_thumbs
-            self._is_gif      = new_is_gif
+            self._items       = new_items
             self._cache_items = []
             self._cache_key   = None
 
-        logger.info(f"Carousel: {len(new_thumbs)} miniatures chargees")
+        n_gifs   = sum(1 for it in new_items if it["is_gif"] and len(it["frames"]) > 1)
+        n_photos = len(new_items) - n_gifs
+        logger.info(f"Carousel: {n_photos} photos + {n_gifs} GIFs animés chargés")
         self._loading = False
 
-    # --- Helpers de construction des surfaces ---------------------------
+    def _find_gif(self, thumb_path: Path) -> Optional[str]:
+        """Trouve le fichier GIF source correspondant à une miniature."""
+        stem = thumb_path.stem   # gif_0001_20260609_123456
+        for d in (self._gif_dir, self._thumb_source.parent / "gifs"):
+            p = d / f"{stem}.gif"
+            if p.exists():
+                return str(p)
+        return None
+
+    def _load_gif_frames(self, gif_path: str):
+        """Charge toutes les frames d'un GIF en surfaces pygame."""
+        try:
+            gif    = PILImage.open(gif_path)
+            frames = []
+            durs   = []
+            idx    = 0
+            while True:
+                try:
+                    img = gif.convert("RGB")
+                    img.thumbnail((_GIF_FRAME_MAX, _GIF_FRAME_MAX), PILImage.LANCZOS)
+                    surf = pygame.image.fromstring(img.tobytes(), img.size, "RGB")
+                    dur  = gif.info.get("duration", 180) / 1000.0
+                    frames.append(surf)
+                    durs.append(max(0.05, dur))
+                    gif.seek(idx + 1)
+                    idx += 1
+                except EOFError:
+                    break
+            logger.debug(f"GIF carousel : {len(frames)} frames depuis {gif_path}")
+            return frames, durs
+        except Exception as e:
+            logger.debug(f"GIF frames load ({gif_path}): {e}")
+            return [], []
+
+    # --- Helpers bordure / ombre ---
 
     @staticmethod
-    def _fit_in_box(surf: "pygame.Surface", bw: int, bh: int,
-                    scale_factor: float = 1.0) -> "pygame.Surface":
-        """
-        Redimensionne la photo pour tenir dans la boîte (bw × bh).
-        Le ratio est conservé. Aucune déformation possible.
-        """
+    def _fit_in_box(surf, box_w, box_h, sf=1.0):
         iw, ih = surf.get_size()
-        scale  = min(bw / iw, bh / ih) * scale_factor
-        tw, th = max(1, int(iw * scale)), max(1, int(ih * scale))
-        return pygame.transform.smoothscale(surf, (tw, th))
+        scale  = min(box_w / iw, box_h / ih) * sf
+        nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
+        return pygame.transform.smoothscale(surf, (nw, nh))
 
-    @staticmethod
     @staticmethod
     def _add_border_and_shadow(scaled: "pygame.Surface", is_gif: bool = False):
-        """
-        Cadre blanc + ombre.
-        Si is_gif=True, ajoute un badge "GIF" violet dans le coin inférieur droit.
-        """
-        pw, ph  = scaled.get_size()
-        border  = max(6, int(min(pw, ph) * 0.068))
-        fw, fh  = pw + border * 2, ph + border * 2
+        pw, ph = scaled.get_size()
+        border = max(6, int(min(pw, ph) * 0.068))
+        fw, fh = pw + border * 2, ph + border * 2
 
         photo = pygame.Surface((fw, fh), pygame.SRCALPHA)
         photo.fill((0, 0, 0, 0))
         pygame.draw.rect(photo, (252, 252, 252, 255), (0, 0, fw, fh))
         photo.blit(scaled, (border, border))
 
-        # Badge GIF
         if is_gif:
             try:
-                font = pygame.font.SysFont("dejavusans", max(10, int(min(fw, fh) * 0.12)))
-                badge_surf = font.render("GIF", True, (255, 255, 255))
-                bw, bh = badge_surf.get_size()
-                pad = max(2, bw // 6)
-                bg  = pygame.Surface((bw + pad*2, bh + pad), pygame.SRCALPHA)
-                pygame.draw.rect(bg, (148, 103, 189, 220), (0, 0, bw + pad*2, bh + pad),
-                                 border_radius=3)
-                bg.blit(badge_surf, (pad, pad // 2))
-                bx = fw - bg.get_width() - border
-                by = fh - bg.get_height() - border
-                photo.blit(bg, (bx, by))
+                font  = pygame.font.SysFont("dejavusans", max(10, int(min(fw, fh) * 0.12)))
+                badge = font.render("GIF", True, (255, 255, 255))
+                bw, bh = badge.get_size()
+                pad    = max(2, bw // 6)
+                bg     = pygame.Surface((bw + pad*2, bh + pad), pygame.SRCALPHA)
+                pygame.draw.rect(bg, (148, 103, 189, 220),
+                                 (0, 0, bw + pad*2, bh + pad), border_radius=3)
+                bg.blit(badge, (pad, pad // 2))
+                photo.blit(bg, (fw - bg.get_width() - border,
+                                fh - bg.get_height() - border))
             except Exception:
                 pass
 
         shadow = pygame.Surface((fw, fh), pygame.SRCALPHA)
         shadow.fill((0, 0, 0, 0))
         pygame.draw.rect(shadow, (0, 0, 0, 88), (0, 0, fw, fh))
-
         return photo, shadow
 
-    # --- Layouts --------------------------------------------------------
+    # --- Layouts ---
 
     def _layout_simple(self, photos, zw, zh, is_portrait, gif_flags=None):
-        """
-        Mode simple : UNE photo qui remplit TOUTE la zone disponible.
-        Ratio conservé, pas de cap à 1.0 → la photo est aussi grande que la zone.
-        Bordure fine de 4px pour un aspect propre.
-        """
         if not photos:
             return []
-        surf = photos[0]
+        surf   = photos[0]
         iw, ih = surf.get_size()
-
-        # Bordure très fine pour ne pas rogner la photo
         BORDER = max(3, int(min(zw, zh) * 0.008))
-
-        # Mise à l'échelle SANS cap → la photo remplit la zone
-        avail_w = zw - BORDER * 2 - 4
-        avail_h = zh - BORDER * 2 - 4
-        scale   = min(avail_w / iw, avail_h / ih)
-        nw      = max(1, int(iw * scale))
-        nh      = max(1, int(ih * scale))
-
+        scale  = min((zw - BORDER*2 - 4) / iw, (zh - BORDER*2 - 4) / ih)
+        nw     = max(1, int(iw * scale))
+        nh     = max(1, int(ih * scale))
         scaled = pygame.transform.smoothscale(surf, (nw, nh))
+        is_gif = gif_flags[0] if gif_flags else False
 
-        # Cadre blanc fin (SRCALPHA)
-        fw, fh = nw + BORDER * 2, nh + BORDER * 2
-        photo = pygame.Surface((fw, fh), pygame.SRCALPHA)
+        fw, fh = nw + BORDER*2, nh + BORDER*2
+        photo  = pygame.Surface((fw, fh), pygame.SRCALPHA)
         photo.fill((0, 0, 0, 0))
         pygame.draw.rect(photo, (252, 252, 252, 255), (0, 0, fw, fh))
         photo.blit(scaled, (BORDER, BORDER))
-
-        # Ombre légère
         shadow = pygame.Surface((fw, fh), pygame.SRCALPHA)
         shadow.fill((0, 0, 0, 0))
         pygame.draw.rect(shadow, (0, 0, 0, 65), (0, 0, fw, fh))
 
-        # Badge GIF si première image est un GIF
-        is_gif = (gif_flags[0] if gif_flags else False)
         if is_gif:
-            photo, shadow = self._add_border_and_shadow(
-                pygame.transform.smoothscale(surf, (nw, nh)), is_gif=True)
+            photo, shadow = self._add_border_and_shadow(scaled, is_gif=True)
             fw, fh = photo.get_size()
 
         return [(photo, shadow, (zw - fw) // 2, (zh - fh) // 2)]
 
     def _layout_table(self, photos, zw, zh, is_portrait, gif_flags=None):
-        """
-        Boîte normalisée : photo redimensionnée pour tenir dans (box_w × box_h)
-        QUELLE QUE SOIT son orientation (portrait ou paysage).
-        """
         n = len(photos)
         if n == 0:
             return []
 
         if is_portrait:
-            # BOÎTE CARRÉE : même côté S pour portrait ET paysage
-            # → les photos ont la même dimension apparente quelle que soit leur orientation
             S_ratio = 0.42 if n <= 2 else (0.33 if n <= 4 else 0.26)
-            S = max(75, min(int(zw * S_ratio), int(zh * 0.82)))
+            S       = max(75, min(int(zw * S_ratio), int(zh * 0.82)))
             box_w, box_h = S, S
             max_rot = 5.0
-            table   = _TABLE_P.get(n, _TABLE_P[min(n, 3)])
+            table   = _TABLE_P.get(n, _TABLE_P[min(n, 9)])
         else:
-            # Boîte carrée pour la zone paysage
             S_ratio = 0.22 if n <= 3 else (0.17 if n <= 5 else 0.14)
-            S = max(60, min(int(zw * S_ratio), int(zh * 0.78)))
+            S       = max(60, min(int(zw * S_ratio), int(zh * 0.78)))
             box_w, box_h = S, S
             max_rot = 8.0
-            table   = _TABLE_L.get(n, _TABLE_L[min(n, 5)])
+            table   = _TABLE_L.get(n, _TABLE_L[min(n, 9)])
 
         items = []
-
         for idx, (surf, (cx_r, cy_r, raw_angle, sf)) in enumerate(zip(photos, table)):
             angle  = max(-max_rot, min(max_rot, raw_angle))
             is_gif = (gif_flags[idx] if gif_flags and idx < len(gif_flags) else False)
 
-            # 1. Redimensionner dans la boîte CARRÉE
-            #    _fit_in_box(surf, S, S) → longue dimension = S, ratio conservé
-            #    Résultat : même taille visuelle pour portrait et paysage
             scaled = self._fit_in_box(surf, box_w, box_h, sf)
             pw, ph = scaled.get_size()
             if pw < 10 or ph < 10:
                 continue
 
-            # 2. Cadre blanc + ombre
             photo_full, shadow_full = self._add_border_and_shadow(scaled, is_gif=is_gif)
             fw, fh = photo_full.get_size()
 
-            # 3. Rotation LISSÉE (rotozoom = interpolation bilinéaire → pas de crénelage)
             if abs(angle) > 0.3:
                 rot_photo  = pygame.transform.rotozoom(photo_full,  angle, 1.0)
                 rot_shadow = pygame.transform.rotozoom(shadow_full, angle, 1.0)
@@ -380,14 +430,12 @@ class CarouselManager:
                 rot_photo, rot_shadow = photo_full, shadow_full
             rw, rh = rot_photo.get_size()
 
-            # 4. Réduire si la bbox après rotation dépasse la zone
             if rw > zw or rh > zh:
                 s = min(zw / rw, zh / rh) * 0.95
                 rot_photo  = pygame.transform.smoothscale(rot_photo,  (int(rw*s), int(rh*s)))
                 rot_shadow = pygame.transform.smoothscale(rot_shadow, (int(rw*s), int(rh*s)))
-                rw, rh = rot_photo.get_size()
+                rw, rh     = rot_photo.get_size()
 
-            # 4. Position dans la zone (centrage sur cx_r, cy_r)
             cx = int(cx_r * zw)
             cy = int(cy_r * zh)
             x  = max(0, min(cx - rw // 2, zw - rw))

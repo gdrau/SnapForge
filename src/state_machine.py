@@ -593,7 +593,8 @@ class StateMachine:
                 self._start_session(count)
 
         elif action == "start_gif":
-            if self._state in (State.IDLE, State.CHOOSE_FORMAT):
+            # CHOOSE_TYPE ajouté → clic souris sur le bouton fonctionne
+            if self._state in (State.IDLE, State.CHOOSE_FORMAT, State.CHOOSE_TYPE):
                 frames = int(self._config.get("gif.frames_count", 6))
                 self._start_session(frames, is_gif=True)
 
