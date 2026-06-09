@@ -68,6 +68,8 @@ class Composer:
         font_path: Optional[str] = None,
         title: Optional[str] = None,
         description: Optional[str] = None,
+        title_size: Optional[int] = None,
+        description_size: Optional[int] = None,
     ) -> str:
         logger.info(f"Composition : template='{template_name}' photos={len(photo_paths)}")
 
@@ -106,10 +108,17 @@ class Composer:
             self._draw_decoration(canvas, dec)
 
         if template.title_zone and title:
-            self._draw_zone_text(canvas, template.title_zone, title, font_path)
+            # Override la taille police si configurée (bornes 20-80)
+            zone = dict(template.title_zone)
+            if title_size is not None:
+                zone["size"] = max(20, min(80, int(title_size)))
+            self._draw_zone_text(canvas, zone, title, font_path)
 
         if template.description_zone and description:
-            self._draw_zone_text(canvas, template.description_zone, description, font_path)
+            zone = dict(template.description_zone)
+            if description_size is not None:
+                zone["size"] = max(12, min(50, int(description_size)))
+            self._draw_zone_text(canvas, zone, description, font_path)
 
         for elem in template.text_elements:
             try:

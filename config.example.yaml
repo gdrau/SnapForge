@@ -14,6 +14,8 @@ app:
 event:
   title: "Mon Événement"
   description: "Votre description ici"
+  title_font_size: 52          # Taille police titre (20-80 pt à 300 DPI)
+  description_font_size: 28    # Taille police description (12-50 pt à 300 DPI)
 
 photos:
   option_a: 1                      # Première option proposée (1-4)

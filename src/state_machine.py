@@ -253,6 +253,8 @@ class StateMachine:
                 font_path=self._config.get("app.font_path"),
                 title=self._config.get("event.title", ""),
                 description=self._config.get("event.description", ""),
+                title_size=self._config.get("event.title_font_size"),
+                description_size=self._config.get("event.description_font_size"),
             )
             self._session.final_photo = self._session.final_path
 
@@ -428,8 +430,10 @@ class StateMachine:
             "tpl_2":           self._config.get("templates.photo_2", "portrait_1photo"),
             "tpl_3":           self._config.get("templates.photo_3", "portrait_1photo"),
             "tpl_4":           self._config.get("templates.photo_4", "landscape_4photos"),
-            "event_title":     self._config.get("event.title", ""),
+            "event_title":      self._config.get("event.title", ""),
+            "event_title_size": int(self._config.get("event.title_font_size", 52)),
             "event_description": self._config.get("event.description", ""),
+            "event_desc_size":  int(self._config.get("event.description_font_size", 28)),
             # Config générale
             "booth_name":        self._config.get("app.booth_name", "SnapForge"),
             "countdown":         self._countdown_s,
@@ -472,8 +476,10 @@ class StateMachine:
             "templates.photo_2":      settings.get("tpl_2", "portrait_1photo"),
             "templates.photo_3":      settings.get("tpl_3", "portrait_1photo"),
             "templates.photo_4":      settings.get("tpl_4", "landscape_4photos"),
-            "event.title":            settings.get("event_title", ""),
-            "event.description":      settings.get("event_description", ""),
+            "event.title":                settings.get("event_title", ""),
+            "event.title_font_size":      int(settings.get("event_title_size", 52)),
+            "event.description":          settings.get("event_description", ""),
+            "event.description_font_size": int(settings.get("event_desc_size", 28)),
             "app.booth_name":              settings.get("booth_name", "SnapForge"),
             "session.countdown_seconds":   self._countdown_s,
             "home_carousel.enabled":       bool(settings.get("carousel_enabled", True)),

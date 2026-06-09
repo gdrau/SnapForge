@@ -606,7 +606,13 @@ class PygameUI:
                 {"type": "cycle", "label": "Template 4 photos",  "key": "tpl_4", "values": tpls or ["landscape_4photos"], "fmt": fmt_tpl},
                 {"type": "sep"},
                 {"type": "text",  "label": "Titre",              "key": "event_title"},
+                {"type": "cycle", "label": "Taille titre",       "key": "event_title_size",
+                 "values": [28, 36, 44, 52, 60, 72, 80],
+                 "fmt": lambda v: f"{v} pt"},
                 {"type": "text",  "label": "Description",        "key": "event_description"},
+                {"type": "cycle", "label": "Taille description", "key": "event_desc_size",
+                 "values": [12, 16, 20, 24, 28, 36, 44, 50],
+                 "fmt": lambda v: f"{v} pt"},
                 {"type": "sep"},
                 {"type": "back"},
             ]
@@ -637,7 +643,7 @@ class PygameUI:
         """Construit la liste de boutons pour les items de la page."""
         margin  = self._admin_margin
         panel_w = self._w - 2 * margin
-        val_w   = max(120, int(panel_w * (0.40 if self._is_portrait else 0.32)))
+        val_w   = max(140, int(panel_w * (0.55 if self._is_portrait else 0.45)))
         val_x   = margin + panel_w - val_w
 
         btns: List[_Btn] = []
