@@ -270,10 +270,43 @@ class PygameUI:
         self._buttons = [
             self._btn_auto(txt, _ACCENT, self._w // 2, cy,
                            font=font_key, px=px, py=22,
-                           action="open_choose_format")
+                           action="open_choose_type")
         ]
         # Recharger les photos du carrousel après chaque retour à l'accueil
         self._carousel.refresh()
+
+    def show_choose_type(self):
+        """Écran niveau 1 : Photo ou GIF ?"""
+        self._screen_name = "choose_type"
+        self._info = {}
+        lm = self._lm
+        m  = lm.margin
+        bw = int(self._w * 0.78) if self._is_portrait else (self._w - 3*m) // 2
+        bh = max(60, int(self._h * 0.20))
+        font = self._best_font_for("GIF ANIME", bw, pad=30)
+
+        if self._is_portrait:
+            gap     = max(14, int(self._h * 0.025))
+            total_h = 2 * bh + gap
+            y0      = self._h // 2 - total_h // 2
+            x       = (self._w - bw) // 2
+            self._buttons = [
+                _Btn((x, y0, bw, bh), "PHOTO",     _BLUE,
+                     font=font, action="open_choose_format", radius=20),
+                _Btn((x, y0 + bh + gap, bw, bh), "GIF ANIME", (148, 103, 189),
+                     font=font, action="start_gif",           radius=20),
+            ]
+        else:
+            gap = m
+            y   = self._h // 2 - bh // 2
+            x0  = m
+            x1  = m * 2 + bw
+            self._buttons = [
+                _Btn((x0, y, bw, bh), "PHOTO",     _BLUE,
+                     font=font, action="open_choose_format", radius=20),
+                _Btn((x1, y, bw, bh), "GIF ANIME", (148, 103, 189),
+                     font=font, action="start_gif",           radius=20),
+            ]
 
     def show_choose_format(self, layouts: List[int], selected: int,
                            gif_enabled: bool = False):
@@ -408,16 +441,54 @@ class PygameUI:
     def show_print_result(self, success: bool):
         self._info["status"] = "Imprime !" if success else "Erreur d'impression"
 
-    def show_qr(self, photo_path: str, qr_image, upload_url):
+    def show_qr(self, photo_path: str, qr_image, upload_url, gif_path: str = None):
         self._screen_name = "qr"
-        self._info = {"photo": photo_path, "qr": qr_image, "url": upload_url}
-        lm = self._lm
-        # Bouton avec marge proportionnelle depuis le bas
+        self._info = {
+            "photo":         photo_path,
+            "qr":            qr_image,
+            "url":           upload_url,
+            "gif_path":      gif_path,
+            "gif_frames":    None,      # chargé en arrière-plan
+            "gif_durations": None,
+            "gif_frame_idx": 0,
+            "gif_frame_t":   0.0,
+        }
+        lm     = self._lm
         btn_cy = self._h - lm.btn_h // 2 - lm.gap_md
         self._buttons = [
             self._btn_auto("RETOUR ACCUEIL", _BLUE, self._w // 2, btn_cy,
                            font="xs", px=28, py=10, action="return_idle")
         ]
+        # Charger les frames GIF en arrière-plan
+        if gif_path and Path(gif_path).exists():
+            threading.Thread(target=self._load_gif_frames,
+                             args=(gif_path,), daemon=True).start()
+
+    def _load_gif_frames(self, gif_path: str):
+        """Charge toutes les frames du GIF en arrière-plan pour l'animation."""
+        try:
+            from PIL import Image as PILImg
+            gif    = PILImg.open(gif_path)
+            frames = []
+            durs   = []
+            idx    = 0
+            while True:
+                try:
+                    frame = gif.convert("RGB")
+                    surf  = pygame.image.fromstring(frame.tobytes(), frame.size, "RGB")
+                    dur   = gif.info.get("duration", 180) / 1000.0
+                    frames.append(surf)
+                    durs.append(max(0.05, dur))
+                    gif.seek(idx + 1)
+                    idx += 1
+                except EOFError:
+                    break
+            self._info["gif_frames"]    = frames
+            self._info["gif_durations"] = durs
+            self._info["gif_frame_t"]   = time.time()
+            logger.info(f"GIF animé : {len(frames)} frames chargées depuis {gif_path}")
+        except Exception as e:
+            logger.error(f"Chargement GIF frames : {e}")
 
     def show_uploading(self):
         """Affiche brièvement 'Envoi en cours...' pendant l'upload cloud."""
@@ -967,7 +1038,11 @@ class PygameUI:
                 self._emit("open_admin")
         elif event.key == pygame.K_SPACE:
             if self._screen_name == "idle":
-                self._emit("open_choose_format")
+                self._emit("open_choose_type")
+            elif self._screen_name == "choose_type":
+                self._emit("open_choose_format")   # Photo par défaut
+            elif self._screen_name == "choose_format":
+                self._emit("back_to_choose_type")
             elif self._screen_name == "preview":
                 self._emit("start_countdown")
 
@@ -978,6 +1053,7 @@ class PygameUI:
     def _render(self):
         dispatch = {
             "idle":          self._r_idle,
+            "choose_type":   self._r_choose_type,
             "choose_format": self._r_choose,
             "preview":       self._r_preview,
             "processing":    self._r_processing,
@@ -1060,6 +1136,16 @@ class PygameUI:
                 pygame.draw.circle(self._screen, _ACCENT if i == t else _GRAY,
                                    (self._w // 2 - dot_sp + i * dot_sp, dy), dot_r)
 
+    def _r_choose_type(self):
+        """Niveau 1 : Photo ou GIF ?"""
+        self._screen.fill(_DARK)
+        self._txt_fit("Quel type de souvenir ?", _WHITE,
+                      self._w // 2, int(self._h * 0.12), max_w=self._w - 20, cx=True)
+        hint = "BTN 1 = Photo   |   BTN 2 = GIF" if not self._is_portrait else ""
+        if hint:
+            self._txt_fit(hint, _GRAY, self._w // 2, int(self._h * 0.92),
+                          max_w=self._w - 20, cx=True)
+
     def _r_choose(self):
         self._screen.fill(_DARK)
         # Titre : 10 % depuis le haut (pas collé au bord)
@@ -1129,20 +1215,34 @@ class PygameUI:
         if self._info.get("status"):
             self._txt(self._info["status"], "sm", _ACCENT, self._w // 2, self._h - 90, cx=True)
 
+    def _get_gif_current_frame(self):
+        """Retourne la frame courante du GIF animé et avance si nécessaire."""
+        frames = self._info.get("gif_frames")
+        if not frames:
+            return None
+        durs = self._info.get("gif_durations") or [0.18] * len(frames)
+        idx  = self._info.get("gif_frame_idx", 0) % len(frames)
+        t    = self._info.get("gif_frame_t", time.time())
+        now  = time.time()
+        if now - t >= durs[idx % len(durs)]:
+            idx = (idx + 1) % len(frames)
+            self._info["gif_frame_idx"] = idx
+            self._info["gif_frame_t"]   = now
+        return frames[idx]
+
     def _r_qr(self):
         """
-        Layout bottom-up (portrait) :
-          [PHOTO — remplit l'espace]
-          [QR centré]
-          [texte "Scannez pour télécharger"]
-          [RETOUR ACCUEIL]
+        Mode GIF  : [ GIF animé centré ] [ QR ] [ Scannez ] [ Retour ]
+        Mode Photo : [ Photo ] [ QR ] [ Scannez ] [ Retour ]
 
         Paysage : photo gauche, QR droite.
         """
         self._screen.fill(_DARK)
-        photo = self._info.get("photo")
-        qr    = self._info.get("qr")
-        lm    = self._lm
+        photo    = self._info.get("photo")
+        qr       = self._info.get("qr")
+        gif_path = self._info.get("gif_path")
+        lm       = self._lm
+        is_gif   = bool(gif_path)
 
         btn_cy  = self._h - lm.btn_h // 2 - lm.gap_md
         btn_top = btn_cy - lm.btn_h // 2
@@ -1150,21 +1250,35 @@ class PygameUI:
 
         if self._is_portrait:
             # -- Calcul bottom-up --
-            # 1. Texte entre QR et bouton
             text_h  = lm.font_xs + 2
-            text_cy = btn_top - gap - text_h // 2   # centre du texte
+            text_cy = btn_top - gap - text_h // 2
 
-            # 2. QR juste au-dessus du texte
-            qr_sz   = max(80, int(self._w * 0.24))  # ~115px @ 480
+            qr_sz   = max(80, int(self._w * 0.24))
             qr_bot  = btn_top - gap - text_h - gap
             qr_y    = qr_bot - qr_sz
             qx      = (self._w - qr_sz) // 2
 
-            # 3. Photo remplit tout l'espace au-dessus du QR
+            # 3. Contenu principal (GIF animé OU photo fixe)
             photo_max_h = qr_y - gap * 2
             photo_max_w = self._w - gap * 2
 
-            if photo and Path(photo).exists():
+            if is_gif:
+                # GIF animé : afficher la frame courante
+                frame = self._get_gif_current_frame()
+                if frame:
+                    iw, ih = frame.get_size()
+                    scale = min(photo_max_w / iw, photo_max_h / ih)
+                    nw, nh = int(iw * scale), int(ih * scale)
+                    if nw != iw:
+                        frame = pygame.transform.scale(frame, (nw, nh))
+                    px = (self._w - nw) // 2
+                    py = gap + max(0, (photo_max_h - nh) // 2)
+                    self._screen.blit(frame, (px, py))
+                else:
+                    # GIF pas encore chargé → texte d'attente
+                    self._txt("Chargement GIF...", "sm", _GRAY,
+                               self._w // 2, gap + photo_max_h // 2, cx=True)
+            elif photo and Path(photo).exists():
                 try:
                     img = pygame.image.load(photo)
                     iw, ih = img.get_size()

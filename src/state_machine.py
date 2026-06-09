@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 
 class State(Enum):
     IDLE = auto()
-    CHOOSE_FORMAT = auto()
+    CHOOSE_TYPE   = auto()    # Photo ou GIF ?  (niveau 1)
+    CHOOSE_FORMAT = auto()    # 1 photo, 4 photos ?  (niveau 2, si Photo)
     PREVIEW = auto()
     COUNTDOWN = auto()
     CAPTURE = auto()
     PROCESSING = auto()
-    GIF_PROCESSING = auto()    # génération du GIF animé
+    GIF_PROCESSING = auto()
     REVIEW = auto()
     PRINT_WAIT = auto()
     QR_DISPLAY = auto()
@@ -125,6 +126,7 @@ class StateMachine:
         self._state = state
         {
             State.IDLE:          self._enter_idle,
+            State.CHOOSE_TYPE:   self._enter_choose_type,
             State.CHOOSE_FORMAT: self._enter_choose_format,
             State.PREVIEW:       self._enter_preview,
             State.COUNTDOWN:     self._enter_countdown,
@@ -146,12 +148,17 @@ class StateMachine:
         booth_name = self._config.get("app.booth_name", "SnapForge")
         self._ui.show_idle(booth_name)
 
-    def _enter_choose_format(self):
+    def _enter_choose_type(self):
+        """Écran niveau 1 : Photo ou GIF ?"""
         self._lights.sequence_blink()
-        gif_enabled = bool(self._config.get("gif.enabled", True) and self._gif_maker)
+        self._ui.show_choose_type()
+
+    def _enter_choose_format(self):
+        """Écran niveau 2 : nombre de photos (uniquement si type=Photo)."""
+        self._lights.sequence_blink()
         self._ui.show_choose_format(
             [self._option_a, self._option_b], self._option_a,
-            gif_enabled=gif_enabled
+            gif_enabled=False   # GIF déjà géré au niveau 1
         )
 
     def _enter_preview(self):
@@ -390,7 +397,9 @@ class StateMachine:
                     logger.error(f"Chargement QR cache : {e}")
 
         # --- Étape 3 : afficher ---
-        self._ui.show_qr(self._session.final_photo, qr_img, upload_url)
+        gif_path = self._session.gif_path if self._session.is_gif_mode else None
+        self._ui.show_qr(self._session.final_photo, qr_img, upload_url,
+                          gif_path=gif_path)
         self._schedule_return(self._qr.display_duration)
 
     def _enter_admin(self):
@@ -502,9 +511,17 @@ class StateMachine:
         self._gpio_log.append(entry)
         logger.debug(f"[GPIO] {entry}")
 
+    def _gif_enabled(self) -> bool:
+        return bool(self._config.get("gif.enabled", True) and self._gif_maker)
+
     def _on_photo_button(self):
+        """BTN1 = action principale / gauche."""
         self._log_gpio(f"BTN1 presse (etat={self._state.name})")
         if self._state == State.IDLE:
+            # Niveau 1 : Photo ou GIF ?
+            self._go(State.CHOOSE_TYPE if self._gif_enabled() else State.CHOOSE_FORMAT)
+        elif self._state == State.CHOOSE_TYPE:
+            # Photo sélectionné → niveau 2
             self._go(State.CHOOSE_FORMAT)
         elif self._state == State.CHOOSE_FORMAT:
             self._start_session(self._option_a)
@@ -517,8 +534,13 @@ class StateMachine:
             self._go(State.IDLE)
 
     def _on_print_button(self):
+        """BTN2 = action secondaire / droite."""
         self._log_gpio(f"BTN2 presse (etat={self._state.name})")
-        if self._state == State.CHOOSE_FORMAT:
+        if self._state == State.CHOOSE_TYPE:
+            # GIF sélectionné → démarrer directement
+            frames = int(self._config.get("gif.frames_count", 6))
+            self._start_session(frames, is_gif=True)
+        elif self._state == State.CHOOSE_FORMAT:
             self._start_session(self._option_b)
         elif self._state == State.REVIEW:
             self._go(State.QR_DISPLAY)
@@ -538,9 +560,19 @@ class StateMachine:
                 self._go(State.ADMIN)
             return
 
-        if action == "open_choose_format":
+        if action == "open_choose_type":
             if self._state == State.IDLE:
+                self._go(State.CHOOSE_TYPE if self._gif_enabled() else State.CHOOSE_FORMAT)
+            return
+
+        if action == "open_choose_format":
+            if self._state in (State.IDLE, State.CHOOSE_TYPE):
                 self._go(State.CHOOSE_FORMAT)
+            return
+
+        if action == "back_to_choose_type":
+            if self._state == State.CHOOSE_FORMAT:
+                self._go(State.CHOOSE_TYPE if self._gif_enabled() else State.IDLE)
             return
 
         if action == "admin_save":
