@@ -187,6 +187,11 @@ class Picamera2Camera:
             try:
                 frame = self._cam.capture_array()
                 if self._callback:
+                    # Picamera2 livre souvent les frames en BGR malgré le format "RGB888"
+                    # (quirk du pipeline VC4) — swap R↔B pour un affichage correct
+                    # La capture fichier (JPEG) n'est pas affectée par ce swap
+                    if frame is not None and frame.ndim == 3 and frame.shape[2] == 3:
+                        frame = frame[:, :, ::-1].copy()
                     self._callback(frame)
             except Exception as e:
                 logger.error(f"Erreur preview: {e}")

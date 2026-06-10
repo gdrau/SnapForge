@@ -723,10 +723,15 @@ class PygameUI:
 
             y += ROW_H
 
-        # Bouton ← Retour fixe en bas pour les sous-pages (non scrollé)
+        # Bouton ← Retour fixe en bas — largeur proportionnelle à l'écran
         if self._admin_page != "main":
-            back = _Btn(
-                (margin, self._h - BTN_H + 2, 170, BTN_H - 12),
+            lm      = self._lm
+            back_w  = max(180, int(self._w * 0.42))   # 42% largeur, min 180px
+            back_h  = max(44, lm.btn_h - 6)           # hauteur correcte
+            back_x  = margin
+            back_y  = self._h - back_h - max(8, lm.gap_sm)
+            back    = _Btn(
+                (back_x, back_y, back_w, back_h),
                 "<  Retour", _PANEL,
                 font=self._fonts["sm"], action="admin_back_btn", radius=8,
             )
@@ -1552,9 +1557,11 @@ class PygameUI:
         items = self._info.get("items", [])
         back_indices = [i for i, it in enumerate(items) if it.get("type") == "back"]
         if back_indices and self._admin_selection == back_indices[0]:
-            by = self._h - BTN_H + 2
+            lm     = self._lm
+            back_h = max(44, lm.btn_h - 6)
+            by     = self._h - back_h - max(8, lm.gap_sm)
             pygame.draw.rect(self._screen, _ACCENT,
-                             (margin - 8, by + 2, 4, BTN_H - 14), border_radius=2)
+                             (margin - 8, by + 2, 4, back_h - 8), border_radius=2)
 
     def _r_admin_gpio_rows(self, start_y: int, settings: dict):
         """Affiche les infos GPIO dans la page diagnostic."""
