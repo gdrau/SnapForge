@@ -1,22 +1,22 @@
 {
   "name": "landscape_4photos",
-  "description": "Paysage 15x10cm — 4 photos, titre, description (1772x1181px @ 300dpi)",
-  "width": 1772,
-  "height": 1181,
+  "description": "Paysage 15x10cm — 4 photos, titre, description (2362x1575px @ 400dpi)",
+  "width": 2362,
+  "height": 1575,
   "background_color": [248, 248, 248],
   "slots": [
-    { "x":  30, "y": 115, "width": 848, "height": 468 },
-    { "x": 893, "y": 115, "width": 848, "height": 468 },
-    { "x":  30, "y": 598, "width": 848, "height": 468 },
-    { "x": 893, "y": 598, "width": 848, "height": 468 }
+    { "x":   40, "y": 153, "width": 1130, "height": 624 },
+    { "x": 1190, "y": 153, "width": 1130, "height": 624 },
+    { "x":   40, "y": 797, "width": 1130, "height": 624 },
+    { "x": 1190, "y": 797, "width": 1130, "height": 624 }
   ],
   "title_zone": {
-    "x": 80, "y": 22, "width": 1612, "height": 78,
-    "size": 44, "color": [30, 30, 30], "align": "center"
+    "x": 107, "y": 29, "width": 2149, "height": 104,
+    "size": 59, "color": [30, 30, 30], "align": "center"
   },
   "description_zone": {
-    "x": 80, "y": 1090, "width": 1612, "height": 68,
-    "size": 26, "color": [100, 100, 100], "align": "center"
+    "x": 107, "y": 1453, "width": 2149, "height": 91,
+    "size": 35, "color": [100, 100, 100], "align": "center"
   },
   "decorations": [],
   "text_elements": []

@@ -111,13 +111,13 @@ class Composer:
             # Override la taille police si configurée (bornes 20-80)
             zone = dict(template.title_zone)
             if title_size is not None:
-                zone["size"] = max(20, min(80, int(title_size)))
+                zone["size"] = max(20, min(200, int(title_size)))
             self._draw_zone_text(canvas, zone, title, font_path)
 
         if template.description_zone and description:
             zone = dict(template.description_zone)
             if description_size is not None:
-                zone["size"] = max(12, min(50, int(description_size)))
+                zone["size"] = max(12, min(150, int(description_size)))
             self._draw_zone_text(canvas, zone, description, font_path)
 
         for elem in template.text_elements:

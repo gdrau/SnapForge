@@ -1,19 +1,19 @@
 {
   "name": "portrait_1photo",
-  "description": "Portrait 10x15cm — 1 photo, titre, description (1181x1772px @ 300dpi)",
-  "width": 1181,
-  "height": 1772,
+  "description": "Portrait 10x15cm — 1 photo, titre, description (1575x2362px @ 400dpi)",
+  "width": 1575,
+  "height": 2362,
   "background_color": [248, 248, 248],
   "slots": [
-    { "x": 103, "y": 257, "width": 975, "height": 1300 }
+    { "x": 137, "y": 343, "width": 1300, "height": 1734 }
   ],
   "title_zone": {
-    "x": 90, "y": 80, "width": 1001, "height": 90,
-    "size": 80, "color": [26, 26, 26], "align": "center"
+    "x": 120, "y": 107, "width": 1335, "height": 120,
+    "size": 107, "color": [26, 26, 26], "align": "center"
   },
   "description_zone": {
-    "x": 90, "y": 1590, "width": 1001, "height": 80,
-    "size": 52, "color": [85, 85, 85], "align": "center"
+    "x": 120, "y": 2120, "width": 1335, "height": 107,
+    "size": 69, "color": [85, 85, 85], "align": "center"
   },
   "decorations": [],
   "text_elements": []
