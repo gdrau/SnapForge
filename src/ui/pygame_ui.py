@@ -263,9 +263,17 @@ class PygameUI:
     # show_* — appelés depuis threads FSM
     # ------------------------------------------------------------------
 
-    def show_idle(self, booth_name: str = "SnapForge"):
+    def show_idle(self, booth_name: str = "SnapForge",
+                 booth_name_size: int = 0,
+                 booth_subtitle: str = "",
+                 booth_subtitle_size: int = 0):
         self._screen_name = "idle"
-        self._info = {"booth_name": booth_name}
+        self._info = {
+            "booth_name":          booth_name,
+            "booth_name_size":     booth_name_size,
+            "booth_subtitle":      booth_subtitle,
+            "booth_subtitle_size": booth_subtitle_size,
+        }
         with self._preview_lock:
             self._preview_frame = None
         # Police et position du bouton adaptées à la largeur de l'écran
@@ -381,6 +389,16 @@ class PygameUI:
             if self._fonts[key].size(text)[0] + pad * 2 <= max_w:
                 return self._fonts[key]
         return self._fonts["xs"]
+
+    def _font_at_size(self, size: int):
+        """Charge une police à la taille exacte en pixels."""
+        size = max(8, size)
+        try:
+            if self._font_path and Path(self._font_path).exists():
+                return pygame.font.Font(self._font_path, size)
+            return pygame.font.SysFont("dejavusans", size)
+        except Exception:
+            return pygame.font.Font(None, size)
 
     def show_preview(self, total: int, remaining: int):
         self._screen_name = "preview"
@@ -626,8 +644,18 @@ class PygameUI:
             ]
 
         if page == "general":
+            fmt_px = lambda v: "Auto" if v == 0 else f"{v} px"
             return [
-                {"type": "text",  "label": "Nom du photobooth", "key": "booth_name"},
+                {"type": "text",  "label": "Nom du photobooth", "key": "booth_name", "wide": True},
+                {"type": "cycle", "label": "Taille ligne 1",    "key": "booth_name_size",
+                 "values": [0, 24, 32, 40, 48, 56, 64, 72, 80, 96, 112],
+                 "fmt": fmt_px},
+                {"type": "sep"},
+                {"type": "text",  "label": "Deuxième ligne",    "key": "booth_subtitle", "wide": True},
+                {"type": "cycle", "label": "Taille ligne 2",    "key": "booth_subtitle_size",
+                 "values": [0, 18, 24, 32, 40, 48, 56, 64, 72],
+                 "fmt": fmt_px},
+                {"type": "sep"},
                 {"type": "cycle", "label": "Compte à rebours",  "key": "countdown", "values": [2,3,5,10], "fmt": fmt_s},
                 {"type": "sep"},
                 {"type": "back"},
@@ -1134,13 +1162,20 @@ class PygameUI:
         subtitle_y = lm.px(lm.idle_subtitle_y)
         btn_cy     = lm.px(lm.idle_btn_y)
 
-        # Titre événement (police auto-ajustée pour ne pas déborder)
-        font = self._best_font_for(name, self._w - lm.margin * 2)
-        ts   = font.render(name, True, _WHITE)
-        self._screen.blit(ts, ts.get_rect(center=(self._w // 2, title_y)))
+        # --- Ligne 1 : nom du photobooth ---
+        name_size = self._info.get("booth_name_size", 0)
+        font1 = (self._font_at_size(name_size) if name_size > 0
+                 else self._best_font_for(name, self._w - lm.margin * 2))
+        ts1 = font1.render(name, True, _WHITE)
+        self._screen.blit(ts1, ts1.get_rect(center=(self._w // 2, title_y)))
 
-        # Sous-titre
-        self._txt("Bienvenue !", "md", _GRAY, self._w // 2, subtitle_y, cx=True)
+        # --- Ligne 2 : deuxième ligne configurable (ou "Bienvenue !" par défaut) ---
+        sub_text = self._info.get("booth_subtitle", "") or "Bienvenue !"
+        sub_size = self._info.get("booth_subtitle_size", 0)
+        font2 = (self._font_at_size(sub_size) if sub_size > 0
+                 else self._fonts["md"])
+        ts2 = font2.render(sub_text, True, _GRAY)
+        self._screen.blit(ts2, ts2.get_rect(center=(self._w // 2, subtitle_y)))
 
         # --- Zone carrousel bornée au-dessus du bouton ---
         btn_h_est   = lm.btn_h

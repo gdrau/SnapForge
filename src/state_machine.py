@@ -165,8 +165,12 @@ class StateMachine:
         self._lights.all_off()
         self._lights.startup_on()
         self._lights.photo_ready()
-        booth_name = self._config.get("app.booth_name", "SnapForge")
-        self._ui.show_idle(booth_name)
+        self._ui.show_idle(
+            booth_name=self._config.get("app.booth_name", "SnapForge"),
+            booth_name_size=int(self._config.get("app.booth_name_size", 0)),
+            booth_subtitle=self._config.get("app.booth_subtitle", ""),
+            booth_subtitle_size=int(self._config.get("app.booth_subtitle_size", 0)),
+        )
 
     def _enter_choose_type(self):
         """Écran niveau 1 : Photo ou GIF ?"""
@@ -455,7 +459,10 @@ class StateMachine:
             "event_description": self._config.get("event.description", ""),
             "event_desc_size":  int(self._config.get("event.description_font_size", 28)),
             # Config générale
-            "booth_name":        self._config.get("app.booth_name", "SnapForge"),
+            "booth_name":          self._config.get("app.booth_name", "SnapForge"),
+            "booth_name_size":     int(self._config.get("app.booth_name_size", 0)),
+            "booth_subtitle":      self._config.get("app.booth_subtitle", ""),
+            "booth_subtitle_size": int(self._config.get("app.booth_subtitle_size", 0)),
             "countdown":         self._countdown_s,
             # Carrousel
             "carousel_enabled":  self._config.get("home_carousel.enabled", True),
@@ -500,7 +507,10 @@ class StateMachine:
             "event.title_font_size":      int(settings.get("event_title_size", 52)),
             "event.description":          settings.get("event_description", ""),
             "event.description_font_size": int(settings.get("event_desc_size", 28)),
-            "app.booth_name":              settings.get("booth_name", "SnapForge"),
+            "app.booth_name":          settings.get("booth_name", "SnapForge"),
+            "app.booth_name_size":     int(settings.get("booth_name_size", 0)),
+            "app.booth_subtitle":      settings.get("booth_subtitle", ""),
+            "app.booth_subtitle_size": int(settings.get("booth_subtitle_size", 0)),
             "session.countdown_seconds":   self._countdown_s,
             "home_carousel.enabled":       bool(settings.get("carousel_enabled", True)),
             "home_carousel.mode":          settings.get("carousel_mode", "table"),

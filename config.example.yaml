@@ -2,7 +2,10 @@
 # Copiez ce fichier en config.yaml et adaptez à votre installation.
 
 app:
-  booth_name: "SnapForge"          # Nom affiché sur l'écran d'accueil
+  booth_name: "SnapForge"          # Nom affiché sur l'écran d'accueil (ligne 1)
+  booth_name_size: 0               # Taille police ligne 1 (0 = auto)
+  booth_subtitle: ""               # Deuxième ligne du titre (vide = "Bienvenue !")
+  booth_subtitle_size: 0           # Taille police ligne 2 (0 = auto)
   fullscreen: true
   # Paysage 800x480 (défaut) ou portrait 480x800 selon votre écran
   # L'interface s'adapte automatiquement selon le ratio largeur/hauteur
