@@ -126,6 +126,7 @@ class PygameUI:
         self._qr_size     = config.get("qr.size", 300)
 
         self._callback: Optional[Callable] = None
+        self._activity_callback: Optional[Callable] = None
         self._screen = None
         self._clock  = None
         self._running = False
@@ -237,6 +238,13 @@ class PygameUI:
 
     def set_touch_callback(self, cb: Callable):
         self._callback = cb
+
+    def set_activity_callback(self, cb: Callable):
+        self._activity_callback = cb
+
+    def _notify_activity(self):
+        if self._activity_callback:
+            threading.Thread(target=self._activity_callback, daemon=True).start()
 
     def _emit(self, action: str, data=None):
         if self._callback:
@@ -767,6 +775,10 @@ class PygameUI:
                 if event.type == pygame.QUIT:
                     self._running = False
                     continue
+
+                # Toute interaction utilisateur → reset timer d'inactivité
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+                    self._notify_activity()
 
                 # Convertir les coordonnées souris/touch vers le canvas logique
                 # (nécessaire quand scale != 1.0, i.e. Pi fullscreen)

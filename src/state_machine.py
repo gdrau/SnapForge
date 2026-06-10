@@ -26,6 +26,16 @@ class State(Enum):
     ERROR = auto()
 
 
+# États où le timer d'inactivité est actif
+_INACTIVITY_STATES = frozenset({
+    State.CHOOSE_TYPE,
+    State.CHOOSE_FORMAT,
+    State.PREVIEW,
+    State.REVIEW,
+    State.PRINT_WAIT,
+})
+
+
 class Session:
 
     def __init__(self, layout_count: int, raw_dir: str, final_dir: str,
@@ -88,6 +98,10 @@ class StateMachine:
         self._state = State.IDLE
         self._session: Optional[Session] = None
         self._return_timer: Optional[threading.Timer] = None
+        self._inactivity_timer: Optional[threading.Timer] = None
+        self._inactivity_timeout: float = float(
+            config.get("session.inactivity_timeout_seconds", 10)
+        )
 
         # Options lues depuis config (compatibilité option_a/b + legacy available_layouts)
         self._option_a: int = config.get("photos.option_a",
@@ -106,11 +120,13 @@ class StateMachine:
     def start(self):
         self._buttons.on_photo_button(self._on_photo_button)
         self._buttons.on_print_button(self._on_print_button)
+        self._ui.set_activity_callback(self._on_user_activity)
         self._lights.startup_on()
         self._go(State.IDLE)
 
     def stop(self):
         self._cancel_timer()
+        self._cancel_inactivity()
         self._lights.all_off()
         try:
             self._camera.stop_preview()
@@ -124,6 +140,10 @@ class StateMachine:
     def _go(self, state: State):
         logger.info(f"[FSM] {self._state.name} -> {state.name}")
         self._state = state
+        if state in _INACTIVITY_STATES:
+            self._reset_inactivity()
+        else:
+            self._cancel_inactivity()
         {
             State.IDLE:          self._enter_idle,
             State.CHOOSE_TYPE:   self._enter_choose_type,
@@ -643,6 +663,32 @@ class StateMachine:
         if self._return_timer:
             self._return_timer.cancel()
             self._return_timer = None
+
+    def _reset_inactivity(self):
+        self._cancel_inactivity()
+        self._inactivity_timer = threading.Timer(
+            self._inactivity_timeout, self._on_inactivity
+        )
+        self._inactivity_timer.daemon = True
+        self._inactivity_timer.start()
+
+    def _cancel_inactivity(self):
+        if self._inactivity_timer:
+            self._inactivity_timer.cancel()
+            self._inactivity_timer = None
+
+    def _on_inactivity(self):
+        if self._state in _INACTIVITY_STATES:
+            logger.info(
+                f"[FSM] Inactivite {self._inactivity_timeout:.0f}s -> retour IDLE "
+                f"(depuis {self._state.name})"
+            )
+            self._go(State.IDLE)
+
+    def _on_user_activity(self):
+        """Appelé par l'UI à chaque interaction (clic/touche/tactile)."""
+        if self._state in _INACTIVITY_STATES:
+            self._reset_inactivity()
 
     @property
     def state(self) -> State:

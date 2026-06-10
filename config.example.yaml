@@ -25,6 +25,7 @@ photos:
 
 session:
   countdown_seconds: 3             # Délai avant chaque capture
+  inactivity_timeout_seconds: 10   # Retour accueil si aucune action (0 = désactivé)
 
 camera:
   resolution_width: 3280
