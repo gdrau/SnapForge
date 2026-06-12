@@ -210,6 +210,10 @@ class StateMachine:
 
     def _do_capture(self, path: str):
         try:
+            # Laisser la LED atteindre sa luminosité max avant le déclenchement
+            pre_delay = float(self._config.get("camera.flash_pre_delay", 0.05))
+            if pre_delay > 0:
+                time.sleep(pre_delay)
             self._camera.capture(path)
             self._session.raw_photos.append(path)
             n = len(self._session.raw_photos)

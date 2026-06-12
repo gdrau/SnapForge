@@ -35,6 +35,7 @@ camera:
   resolution_height: 2464
   preview_width: 800
   preview_height: 480
+  flash_pre_delay: 0.05          # Délai (s) entre allumage flash et déclenchement (0 = simultané)
   rotation: 0
   flip_horizontal: false
   flip_vertical: false
