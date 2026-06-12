@@ -1169,13 +1169,18 @@ class PygameUI:
         ts1 = font1.render(name, True, _WHITE)
         self._screen.blit(ts1, ts1.get_rect(center=(self._w // 2, title_y)))
 
-        # --- Ligne 2 : deuxième ligne configurable (ou "Bienvenue !" par défaut) ---
-        sub_text = self._info.get("booth_subtitle", "") or "Bienvenue !"
-        sub_size = self._info.get("booth_subtitle_size", 0)
-        font2 = (self._font_at_size(sub_size) if sub_size > 0
-                 else self._fonts["md"])
-        ts2 = font2.render(sub_text, True, _GRAY)
-        self._screen.blit(ts2, ts2.get_rect(center=(self._w // 2, subtitle_y)))
+        # --- Ligne 2 : deuxième ligne configurable (optionnelle, juste sous ligne 1) ---
+        sub_text = self._info.get("booth_subtitle", "")
+        if sub_text:
+            sub_size = self._info.get("booth_subtitle_size", 0)
+            font2 = (self._font_at_size(sub_size) if sub_size > 0
+                     else self._fonts["md"])
+            ts2 = font2.render(sub_text, True, _LGRAY)
+            line2_y = title_y + ts1.get_height() // 2 + max(6, lm.gap_sm) + ts2.get_height() // 2
+            self._screen.blit(ts2, ts2.get_rect(center=(self._w // 2, line2_y)))
+
+        # --- "Bienvenue !" toujours présent ---
+        self._txt("Bienvenue !", "md", _GRAY, self._w // 2, subtitle_y, cx=True)
 
         # --- Zone carrousel bornée au-dessus du bouton ---
         btn_h_est   = lm.btn_h
