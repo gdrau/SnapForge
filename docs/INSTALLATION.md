@@ -249,51 +249,57 @@ printing:
 
 ## 10. Export USB — désactiver l'automount graphique
 
-Par défaut, Raspberry Pi OS affiche une notification ou ouvre le gestionnaire de fichiers à chaque insertion de clé USB, ce qui sort l'utilisateur de SnapForge. Voici comment le désactiver selon votre version.
+Par défaut, Raspberry Pi OS ouvre le gestionnaire de fichiers à chaque insertion de clé USB, ce qui sort l'utilisateur de SnapForge.
 
-### Étape 1 — Identifier votre environnement de bureau
-
-```bash
-echo $DESKTOP_SESSION
-# ou
-ps aux | grep -E "lxsession|lxqt|wayfire|openbox" | grep -v grep | head -3
-```
+> ⚠️ **Règle importante** : il faut désactiver uniquement la fenêtre de dialogue (`autorun=0`), **pas** le montage automatique (`mount_removable=1`). Sans montage automatique, SnapForge ne peut pas détecter la clé.
 
 ---
 
-### Raspberry Pi OS (LXDE / PCManFM) — le plus courant
+### Raspberry Pi OS Trixie avec labwc (configuration validée)
+
+C'est la configuration testée et fonctionnelle sur Raspberry Pi OS Trixie + labwc :
+
+```bash
+cat > ~/.config/pcmanfm/default/pcmanfm.conf << 'EOF'
+[volume]
+mount_on_startup=0
+mount_removable=1
+autorun=0
+EOF
+
+pkill pcmanfm
+```
+
+- `mount_removable=1` → la clé est montée automatiquement dans `/media/` ✓
+- `autorun=0` → aucune fenêtre "Voulez-vous l'ouvrir ?" ✓
+- `lwrespawn` relance pcmanfm automatiquement après `pkill`
+
+---
+
+### Autres versions (LXDE classique)
 
 ```bash
 # Trouver le profil actif
 ls ~/.config/pcmanfm/
 
-# Appliquer sur le profil LXDE-pi (standard Raspberry Pi OS)
+# Appliquer (adapter le nom du dossier si besoin : default, LXDE-pi, LXDE)
 mkdir -p ~/.config/pcmanfm/LXDE-pi
 cat > ~/.config/pcmanfm/LXDE-pi/pcmanfm.conf << 'EOF'
 [volume]
 mount_on_startup=0
-mount_removable=0
+mount_removable=1
 autorun=0
 EOF
 
-# Si votre profil s'appelle "LXDE" (pas "LXDE-pi"), adaptez :
-mkdir -p ~/.config/pcmanfm/LXDE
-cp ~/.config/pcmanfm/LXDE-pi/pcmanfm.conf ~/.config/pcmanfm/LXDE/pcmanfm.conf
-```
-
-Puis redémarrez PCManFM :
-
-```bash
-pkill pcmanfm; sleep 1
-pcmanfm --desktop &
+pkill pcmanfm; sleep 1; pcmanfm --desktop &
 ```
 
 ---
 
-### Raspberry Pi OS Bookworm/Trixie (GNOME ou Wayfire)
+### Raspberry Pi OS (GNOME ou Wayfire)
 
 ```bash
-gsettings set org.gnome.desktop.media-handling automount false
+gsettings set org.gnome.desktop.media-handling automount true
 gsettings set org.gnome.desktop.media-handling automount-open false
 gsettings set org.gnome.desktop.media-handling autorun-never true
 ```
