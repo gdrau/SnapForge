@@ -1022,8 +1022,10 @@ class PygameUI:
                     self._emit("admin_save", dict(settings))
                 elif act == "admin_cancel":
                     self._emit("admin_cancel")
+                elif act == "admin_confirm_reset":
+                    self.show_reset_confirm()
                 elif act == "admin_confirm_quit":
-                    self.show_confirm_quit()   # même action que le clic souris
+                    self.show_confirm_quit()
             elif itype == "back":
                 self._admin_go_back(settings)
             return True
