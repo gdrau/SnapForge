@@ -1,4 +1,5 @@
 import logging
+import shutil
 import threading
 import time
 from collections import deque
@@ -25,6 +26,24 @@ class State(Enum):
     ADMIN = auto()
     ERROR = auto()
     USB_EXPORT = auto()
+
+
+def _clear_dir(path: Path) -> int:
+    """Vide un dossier sans le supprimer. Retourne le nombre d'éléments supprimés."""
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+        return 0
+    count = 0
+    for item in path.iterdir():
+        try:
+            if item.is_file() or item.is_symlink():
+                item.unlink()
+            elif item.is_dir():
+                shutil.rmtree(item)
+            count += 1
+        except Exception as e:
+            logger.warning(f"Suppression impossible : {item} — {e}")
+    return count
 
 
 # États où le timer d'inactivité est actif
@@ -693,6 +712,10 @@ class StateMachine:
                 threading.Thread(target=self._do_upload, daemon=True).start()
                 self._go(State.QR_DISPLAY)
 
+        elif action == "confirm_reset":
+            if self._state == State.ADMIN:
+                threading.Thread(target=self._do_reset_event, daemon=True).start()
+
         elif action == "return_idle":
             self._cancel_timer()
             self._go(State.IDLE)
@@ -703,6 +726,54 @@ class StateMachine:
             self._ui.stop()
 
     # ------------------------------------------------------------------
+
+    def _do_reset_event(self):
+        """Remet SnapForge à zéro pour un nouvel événement."""
+        logger.info("Remise à zéro demandée — confirmation validée")
+
+        # 1. Sauvegarde horodatée de la config
+        config_path = Path("config.yaml")
+        if config_path.exists():
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup = Path(f"config_backup_{ts}.yaml")
+            try:
+                shutil.copy2(config_path, backup)
+                logger.info(f"Sauvegarde config : {backup}")
+            except Exception as e:
+                logger.warning(f"Sauvegarde config impossible : {e}")
+
+        # 2. Suppression des photos et médias
+        dirs = [
+            ("photos.final_dir",    "Photo/final",      "photos finales"),
+            ("photos.raw_dir",      "Photo/raw",        "photos originales"),
+            ("gif.output_dir",      "Photo/gifs",       "GIF animés"),
+            ("gif.thumbnails_dir",  "Photo/thumbnails", "miniatures"),
+        ]
+        for key, default, label in dirs:
+            path = Path(self._config.get(key, default))
+            n = _clear_dir(path)
+            logger.info(f"Suppression {label} : {n} élément(s) supprimé(s) dans {path}")
+
+        # 3. Réinitialisation des textes et tailles
+        resets = {
+            "event.title":                "",
+            "event.description":          "",
+            "event.title_font_size":      69,
+            "event.description_font_size": 35,
+            "app.booth_name":             "SnapForge",
+            "app.booth_subtitle":         "",
+            "app.booth_name_size":        0,
+            "app.booth_subtitle_size":    0,
+        }
+        for key, val in resets.items():
+            self._config.set(key, val)
+        logger.info("Réinitialisation titre/description/noms terminée")
+
+        # 4. Sauvegarde de la config réinitialisée
+        self._config.save()
+        logger.info("Remise à zéro terminée")
+
+        self._go(State.IDLE)
 
     def _start_session(self, layout_count: int, is_gif: bool = False):
         self._session = Session(layout_count, self._raw_dir, self._final_dir,

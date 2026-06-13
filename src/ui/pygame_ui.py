@@ -570,6 +570,26 @@ class PygameUI:
                  font=self._fonts["sm"], action="cancel_quit", radius=8),
         ]
 
+    def show_reset_confirm(self):
+        """Dialogue de confirmation de remise à zéro."""
+        self._screen_name = "reset_confirm"
+        lm  = self._lm
+        w, h = self._w, self._h
+        box_w = min(int(w * 0.88), int(lm.font_md * 22))
+        box_h = int(h * 0.52)
+        box_x = (w - box_w) // 2
+        box_y = h // 2 - box_h // 2
+        gap   = max(8, lm.gap_sm)
+        half  = (box_w - gap) // 2
+        bh    = lm.btn_h
+        by    = box_y + box_h - bh - gap * 2
+        self._buttons = [
+            _Btn((box_x,          by, half, bh), "Annuler",  _GRAY,
+                 font=self._fonts["sm"], action="cancel_reset",  radius=8),
+            _Btn((box_x+half+gap, by, half, bh), "Confirmer", _RED,
+                 font=self._fonts["sm"], action="confirm_reset", radius=8),
+        ]
+
     # ------------------------------------------------------------------
     # Admin
     # ------------------------------------------------------------------
@@ -613,9 +633,10 @@ class PygameUI:
                 {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
                  "desc": "Boutons · LEDs · Journal"},
                 {"type": "sep"},
-                {"type": "action", "label": "Sauvegarder et quitter",  "action": "admin_save",         "color": _GREEN},
-                {"type": "action", "label": "Retour à l'accueil",       "action": "admin_cancel",       "color": _GRAY},
-                {"type": "action", "label": "Quitter l'application",    "action": "admin_confirm_quit", "color": _RED},
+                {"type": "action", "label": "Sauvegarder et quitter",  "action": "admin_save",           "color": _GREEN},
+                {"type": "action", "label": "Retour à l'accueil",       "action": "admin_cancel",         "color": _GRAY},
+                {"type": "action", "label": "Remise à zéro",            "action": "admin_confirm_reset",  "color": _RED},
+                {"type": "action", "label": "Quitter l'application",    "action": "admin_confirm_quit",   "color": _RED},
             ]
 
         if page == "plugins":
@@ -845,6 +866,9 @@ class PygameUI:
                     elif self._screen_name == "confirm_quit":
                         if self._handle_confirm_quit_key(event):
                             continue
+                    elif self._screen_name == "reset_confirm":
+                        if self._handle_reset_confirm_key(event):
+                            continue
                     self._on_key(event)
                     continue
 
@@ -902,6 +926,13 @@ class PygameUI:
 
             elif action == "admin_cancel":
                 self._emit("admin_cancel")
+
+            elif action == "admin_confirm_reset":
+                self.show_reset_confirm()
+
+            elif action == "cancel_reset":
+                self._screen_name = "admin"
+                self._build_admin(settings)
 
             elif action == "admin_confirm_quit":
                 # Affiche la boîte de confirmation sans quitter immédiatement
@@ -1100,6 +1131,18 @@ class PygameUI:
     def stop(self):
         self._running = False
 
+    def _handle_reset_confirm_key(self, event) -> bool:
+        """Entrée = confirmer la remise à zéro  |  Échap = annuler."""
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self._emit("confirm_reset")
+            return True
+        if event.key == pygame.K_ESCAPE:
+            settings = self._info.get("settings", {})
+            self._screen_name = "admin"
+            self._build_admin(settings)
+            return True
+        return True
+
     def _handle_confirm_quit_key(self, event) -> bool:
         """
         Gère le clavier sur l'écran de confirmation de fermeture.
@@ -1153,6 +1196,7 @@ class PygameUI:
             "usb_export":    self._r_usb_export,
             "admin":         self._r_admin,
             "confirm_quit":  self._r_confirm_quit,
+            "reset_confirm": self._r_reset_confirm,
         }
         # 1. Rendu sur le canvas logique (self._screen = 480×800 toujours)
         dispatch.get(self._screen_name, lambda: self._screen.fill(_DARK))()
@@ -1521,6 +1565,32 @@ class PygameUI:
                       box_y + int(box_h * 0.36), max_w=box_w - 20, cx=True)
         self._txt_fit("Entree = confirmer     Echap = annuler", _DISABLED, cx,
                       box_y + int(box_h * 0.52), max_w=box_w - 20, cx=True)
+
+    def _r_reset_confirm(self):
+        """Dialogue de confirmation de remise à zéro."""
+        self._screen.fill(_DARK)
+        lm  = self._lm
+        w, h = self._w, self._h
+        box_w = min(int(w * 0.88), int(lm.font_md * 22))
+        box_h = int(h * 0.52)
+        box_x = (w - box_w) // 2
+        box_y = h // 2 - box_h // 2
+        radius = max(10, int(lm.font_xs * 0.7))
+        cx = w // 2
+
+        pygame.draw.rect(self._screen, _DARK2, (box_x, box_y, box_w, box_h), border_radius=radius)
+        pygame.draw.rect(self._screen, _RED,   (box_x, box_y, box_w, box_h), 2, border_radius=radius)
+
+        self._txt_fit("Remise à zéro",
+                      _RED,   cx, box_y + int(box_h * 0.12), max_w=box_w - 20, cx=True)
+        self._txt_fit("Cette action supprime TOUTES les photos",
+                      _WHITE, cx, box_y + int(box_h * 0.28), max_w=box_w - 24, cx=True)
+        self._txt_fit("et GIF de l'événement actuel.",
+                      _WHITE, cx, box_y + int(box_h * 0.38), max_w=box_w - 24, cx=True)
+        self._txt_fit("Assurez-vous d'avoir fait un export USB.",
+                      _GRAY,  cx, box_y + int(box_h * 0.50), max_w=box_w - 24, cx=True)
+        self._txt_fit("Entree = confirmer     Echap = annuler",
+                      _DISABLED, cx, box_y + int(box_h * 0.63), max_w=box_w - 24, cx=True)
 
     # ------------------------------------------------------------------
     # Rendu admin
