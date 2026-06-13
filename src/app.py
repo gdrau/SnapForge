@@ -74,9 +74,11 @@ def main() -> None:
     from qr.qr_generator import QRGenerator
     from ui.pygame_ui import PygameUI
     from state_machine import StateMachine
+    from usb.usb_exporter import UsbExporter
 
-    lights    = LightManager(config)
-    buttons   = ButtonManager(config)
+    lights       = LightManager(config)
+    buttons      = ButtonManager(config)
+    usb_exporter = UsbExporter(config)
     camera    = create_camera(config)
     composer  = Composer(config)
     ai_proc   = AIBackgroundProcessor(config)
@@ -98,6 +100,7 @@ def main() -> None:
         qr_gen=qr_gen,
         ui=ui,
         gif_maker=gif_maker,
+        usb_exporter=usb_exporter,
     )
     ui.set_touch_callback(fsm.handle_touch)
 

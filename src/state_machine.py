@@ -24,6 +24,7 @@ class State(Enum):
     QR_DISPLAY = auto()
     ADMIN = auto()
     ERROR = auto()
+    USB_EXPORT = auto()
 
 
 # États où le timer d'inactivité est actif
@@ -82,7 +83,7 @@ class Session:
 class StateMachine:
 
     def __init__(self, config, camera, lights, buttons, composer, ai_processor,
-                 uploader, printer, qr_gen, ui, gif_maker=None):
+                 uploader, printer, qr_gen, ui, gif_maker=None, usb_exporter=None):
         self._config     = config
         self._camera     = camera
         self._lights     = lights
@@ -93,7 +94,8 @@ class StateMachine:
         self._printer    = printer
         self._qr         = qr_gen
         self._ui         = ui
-        self._gif_maker  = gif_maker
+        self._gif_maker      = gif_maker
+        self._usb_exporter   = usb_exporter
 
         self._state = State.IDLE
         self._session: Optional[Session] = None
@@ -120,6 +122,7 @@ class StateMachine:
     def start(self):
         self._buttons.on_photo_button(self._on_photo_button)
         self._buttons.on_print_button(self._on_print_button)
+        self._buttons.on_usb_button(self._on_usb_button)
         self._ui.set_activity_callback(self._on_user_activity)
         self._lights.startup_on()
         self._go(State.IDLE)
@@ -158,6 +161,7 @@ class StateMachine:
             State.QR_DISPLAY:    self._enter_qr_display,
             State.ADMIN:         self._enter_admin,
             State.ERROR:         self._enter_error,
+            State.USB_EXPORT:    self._enter_usb_export,
         }[state]()
 
     def _enter_idle(self):
@@ -472,6 +476,8 @@ class StateMachine:
             "carousel_enabled":  self._config.get("home_carousel.enabled", True),
             "carousel_mode":     self._config.get("home_carousel.mode", "table"),
             "carousel_interval": int(self._config.get("home_carousel.interval_seconds", 4)),
+            # Export USB
+            "usb_enabled":   bool(self._config.get("usb_export.enabled", False)),
             # Metadata UI
             "_available_templates": tpl_names,
             "_gpio_log":       list(self._gpio_log),
@@ -519,6 +525,7 @@ class StateMachine:
             "home_carousel.enabled":       bool(settings.get("carousel_enabled", True)),
             "home_carousel.mode":          settings.get("carousel_mode", "table"),
             "home_carousel.interval_seconds": int(settings.get("carousel_interval", 4)),
+            "usb_export.enabled":             bool(settings.get("usb_enabled", False)),
         }
         for key, val in updates.items():
             self._config.set(key, val)
@@ -541,6 +548,23 @@ class StateMachine:
         self._ui.show_error(msg)
         self._schedule_return(6)
 
+    def _enter_usb_export(self):
+        self._lights.all_off()
+        self._lights.startup_on()
+        self._ui.show_usb_export("Recherche de la clé USB...")
+        if self._usb_exporter:
+            self._usb_exporter.export(
+                status_cb=self._ui.update_usb_status,
+                done_cb=self._on_usb_export_done,
+            )
+        else:
+            self._ui.update_usb_status("Export USB non disponible", done=True, success=False)
+            self._schedule_return(3)
+
+    def _on_usb_export_done(self, success: bool, message: str):
+        self._ui.update_usb_status(message, done=True, success=success)
+        self._schedule_return(3)
+
     # ------------------------------------------------------------------
     # Boutons physiques
     # ------------------------------------------------------------------
@@ -554,9 +578,25 @@ class StateMachine:
     def _gif_enabled(self) -> bool:
         return bool(self._config.get("gif.enabled", True) and self._gif_maker)
 
+    def _on_usb_button(self):
+        """BTN3 = export USB (PIN 16)."""
+        self._log_gpio(f"BTN USB presse (etat={self._state.name})")
+        if not self._config.get("usb_export.enabled", False):
+            return
+        if self._state != State.IDLE:
+            logger.info(
+                f"Bouton export USB pressé hors écran accueil "
+                f"(état={self._state.name}) : action ignorée"
+            )
+            return
+        logger.info("Bouton export USB pressé depuis accueil : vérification clé USB")
+        self._go(State.USB_EXPORT)
+
     def _on_photo_button(self):
         """BTN1 = action principale / gauche."""
         self._log_gpio(f"BTN1 presse (etat={self._state.name})")
+        if self._state == State.USB_EXPORT:
+            return
         if self._state == State.IDLE:
             # Niveau 1 : Photo ou GIF ?
             self._go(State.CHOOSE_TYPE if self._gif_enabled() else State.CHOOSE_FORMAT)
@@ -576,6 +616,8 @@ class StateMachine:
     def _on_print_button(self):
         """BTN2 = action secondaire / droite."""
         self._log_gpio(f"BTN2 presse (etat={self._state.name})")
+        if self._state == State.USB_EXPORT:
+            return
         if self._state == State.CHOOSE_TYPE:
             # GIF sélectionné → démarrer directement
             frames = int(self._config.get("gif.frames_count", 6))

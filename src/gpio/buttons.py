@@ -68,6 +68,9 @@ class ButtonManager:
             self._buttons["print"] = PhysicalButton(
                 config.get("gpio.print_button_pin", 13), bounce
             )
+            self._buttons["usb"] = PhysicalButton(
+                config.get("usb_export.button_pin", 16), bounce
+            )
 
     def on_photo_button(self, cb: Callable):
         if "photo" in self._buttons:
@@ -76,6 +79,10 @@ class ButtonManager:
     def on_print_button(self, cb: Callable):
         if "print" in self._buttons:
             self._buttons["print"].on_press(cb)
+
+    def on_usb_button(self, cb: Callable):
+        if "usb" in self._buttons:
+            self._buttons["usb"].on_press(cb)
 
     def close(self):
         for b in self._buttons.values():

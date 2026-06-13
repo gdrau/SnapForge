@@ -527,6 +527,16 @@ class PygameUI:
         self._buttons = []
         self._info = {"msg": str(message)}
 
+    def show_usb_export(self, status: str = ""):
+        self._screen_name = "usb_export"
+        self._buttons = []
+        self._info = {"usb_status": status, "usb_done": False, "usb_success": True}
+
+    def update_usb_status(self, status: str, done: bool = False, success: bool = True):
+        self._info["usb_status"]  = status
+        self._info["usb_done"]    = done
+        self._info["usb_success"] = success
+
     @staticmethod
     def _confirm_quit_geometry(w, h, lm):
         """Calcul des dimensions du dialogue Quitter — partagé render + show."""
@@ -595,6 +605,8 @@ class PygameUI:
                  "desc": "Formats · Templates · Titres"},
                 {"type": "nav", "label": "Configuration",       "target": "general",
                  "desc": "Nom du photobooth · Délai"},
+                {"type": "nav", "label": "Export USB",           "target": "usb",
+                 "desc": "Copie des photos sur clé USB"},
                 {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
                  "desc": "Boutons · LEDs · Journal"},
                 {"type": "sep"},
@@ -657,6 +669,14 @@ class PygameUI:
                  "fmt": fmt_px},
                 {"type": "sep"},
                 {"type": "cycle", "label": "Compte à rebours",  "key": "countdown", "values": [2,3,5,10], "fmt": fmt_s},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+
+        if page == "usb":
+            return [
+                {"type": "toggle", "label": "Export USB activé", "key": "usb_enabled",
+                 "fmt": fmt_on},
                 {"type": "sep"},
                 {"type": "back"},
             ]
@@ -1127,6 +1147,7 @@ class PygameUI:
             "review":        self._r_review,
             "qr":            self._r_qr,
             "error":         self._r_error,
+            "usb_export":    self._r_usb_export,
             "admin":         self._r_admin,
             "confirm_quit":  self._r_confirm_quit,
         }
@@ -1435,6 +1456,45 @@ class PygameUI:
         self._txt(str(self._info.get("msg", ""))[:70], "xs", _LGRAY, self._w // 2, self._h // 2, cx=True)
         self._txt("Retour automatique...", "xs", _GRAY, self._w // 2, self._h * 2 // 3, cx=True)
 
+    def _r_usb_export(self):
+        self._screen.fill(_DARK)
+        lm     = self._lm
+        cx     = self._w // 2
+        done    = self._info.get("usb_done", False)
+        success = self._info.get("usb_success", True)
+        status  = self._info.get("usb_status", "")
+
+        # Titre
+        self._txt("Export USB", "xl", _WHITE, cx, int(self._h * 0.20), cx=True)
+
+        # Ligne décorative
+        line_y = int(self._h * 0.30)
+        bar_w  = min(int(self._w * 0.55), 320)
+        pygame.draw.line(self._screen, _ACCENT,
+                         (cx - bar_w // 2, line_y), (cx + bar_w // 2, line_y), 2)
+
+        # Message de statut
+        status_y = int(self._h * 0.50)
+        if done:
+            color = _GREEN if success else _RED
+        else:
+            color = _LGRAY
+        self._txt_fit(status, color, cx, status_y,
+                      max_w=self._w - lm.margin * 2, cx=True)
+
+        if done:
+            self._txt("Retour automatique...", "xs", _GRAY, cx, int(self._h * 0.65), cx=True)
+        else:
+            # Animation 3 points
+            t      = int(time.time() * 2) % 3
+            dot_r  = max(5, int(lm.font_xs * 0.35))
+            dot_sp = dot_r * 3
+            dy     = int(self._h * 0.65)
+            for i in range(3):
+                pygame.draw.circle(self._screen,
+                                   _ACCENT if i == t else _GRAY,
+                                   (cx - dot_sp + i * dot_sp, dy), dot_r)
+
     def _r_confirm_quit(self):
         """Dialogue de confirmation — layout unifié avec show_confirm_quit."""
         self._screen.fill(_DARK)
@@ -1590,11 +1650,12 @@ class PygameUI:
         # En-tête fixe
         pygame.draw.rect(self._screen, _PANEL, (0, 0, self._w, HDR_H))
         page_titles = {
-            "main": "ADMINISTRATION",
+            "main":    "ADMINISTRATION",
             "plugins": "PLUGINS",
-            "photos": "PHOTOS / TEMPLATES",
+            "photos":  "PHOTOS / TEMPLATES",
             "general": "CONFIGURATION",
-            "gpio": "DIAGNOSTIC GPIO",
+            "usb":     "EXPORT USB",
+            "gpio":    "DIAGNOSTIC GPIO",
         }
         title = page_titles.get(self._admin_page, self._admin_page.upper())
         self._txt(title, "md", _WHITE, self._w // 2, HDR_H // 2, cx=True)

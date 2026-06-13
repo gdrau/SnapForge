@@ -96,6 +96,10 @@ home_carousel:
   interval_seconds: 4              # Délai entre les changements de photo
   max_photos_displayed: 5          # Nombre max de photos visibles (mode table)
 
+usb_export:
+  enabled: false             # Activer l'export USB (bouton GPIO PIN 16)
+  button_pin: 16             # PIN BOARD du bouton export USB
+
 printing:
   enabled: false
   printer_name: ""
