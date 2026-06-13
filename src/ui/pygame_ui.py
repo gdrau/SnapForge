@@ -570,6 +570,16 @@ class PygameUI:
                  font=self._fonts["sm"], action="cancel_quit", radius=8),
         ]
 
+    def show_reset_progress(self, message: str = ""):
+        self._screen_name = "reset_progress"
+        self._buttons = []
+        self._info["reset_msg"]  = message
+        self._info["reset_done"] = False
+
+    def update_reset_progress(self, message: str, done: bool = False):
+        self._info["reset_msg"]  = message
+        self._info["reset_done"] = done
+
     def show_reset_confirm(self):
         """Dialogue de confirmation de remise à zéro."""
         self._screen_name = "reset_confirm"
@@ -1220,7 +1230,8 @@ class PygameUI:
             "usb_export":    self._r_usb_export,
             "admin":         self._r_admin,
             "confirm_quit":  self._r_confirm_quit,
-            "reset_confirm": self._r_reset_confirm,
+            "reset_confirm":   self._r_reset_confirm,
+            "reset_progress":  self._r_reset_progress,
         }
         # 1. Rendu sur le canvas logique (self._screen = 480×800 toujours)
         dispatch.get(self._screen_name, lambda: self._screen.fill(_DARK))()
@@ -1617,6 +1628,37 @@ class PygameUI:
                       _DISABLED, cx, box_y + int(box_h * 0.63), max_w=box_w - 24, cx=True)
 
     # ------------------------------------------------------------------
+    def _r_reset_progress(self):
+        """Écran affiché pendant et après la remise à zéro."""
+        self._screen.fill(_DARK)
+        lm   = self._lm
+        cx   = self._w // 2
+        msg  = self._info.get("reset_msg", "")
+        done = self._info.get("reset_done", False)
+
+        self._txt("Remise à zéro", "xl", _WHITE, cx, int(self._h * 0.22), cx=True)
+
+        bar_w = min(int(self._w * 0.55), 320)
+        line_y = int(self._h * 0.32)
+        pygame.draw.line(self._screen, _RED,
+                         (cx - bar_w // 2, line_y), (cx + bar_w // 2, line_y), 2)
+
+        color = _GREEN if done else _LGRAY
+        self._txt_fit(msg, color, cx, int(self._h * 0.50),
+                      max_w=self._w - lm.margin * 2, cx=True)
+
+        if done:
+            self._txt("Retour à l'accueil...", "xs", _GRAY, cx, int(self._h * 0.65), cx=True)
+        else:
+            t     = int(time.time() * 2) % 3
+            dot_r = max(5, int(lm.font_xs * 0.35))
+            dot_sp = dot_r * 3
+            dy    = int(self._h * 0.65)
+            for i in range(3):
+                pygame.draw.circle(self._screen,
+                                   _RED if i == t else _GRAY,
+                                   (cx - dot_sp + i * dot_sp, dy), dot_r)
+
     # Rendu admin
     # ------------------------------------------------------------------
 

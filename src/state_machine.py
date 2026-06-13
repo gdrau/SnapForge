@@ -714,6 +714,7 @@ class StateMachine:
 
         elif action == "confirm_reset":
             if self._state == State.ADMIN:
+                self._ui.show_reset_progress("Remise à zéro en cours...")
                 threading.Thread(target=self._do_reset_event, daemon=True).start()
 
         elif action == "return_idle":
@@ -773,6 +774,8 @@ class StateMachine:
         self._config.save()
         logger.info("Remise à zéro terminée")
 
+        self._ui.update_reset_progress("Remise à zéro terminée", done=True)
+        time.sleep(2.5)
         self._go(State.IDLE)
 
     def _start_session(self, layout_count: int, is_gif: bool = False):
