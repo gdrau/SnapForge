@@ -247,7 +247,39 @@ printing:
 
 ---
 
-## 10. Mise à jour
+## 10. Export USB — désactiver l'automount graphique
+
+Par défaut, Raspberry Pi OS ouvre une fenêtre de gestionnaire de fichiers à chaque insertion de clé USB, ce qui sort l'utilisateur de SnapForge. Il faut désactiver ce comportement.
+
+### Raspberry Pi OS (PCManFM / LXDE)
+
+```bash
+# Désactiver l'automount et l'autorun dans PCManFM
+mkdir -p ~/.config/pcmanfm/LXDE-pi
+cat > ~/.config/pcmanfm/LXDE-pi/pcmanfm.conf << 'EOF'
+[volume]
+mount_on_startup=0
+mount_removable=0
+autorun=0
+EOF
+```
+
+### Raspberry Pi OS Bookworm/Trixie (si basé sur GNOME/Wayfire)
+
+```bash
+gsettings set org.gnome.desktop.media-handling automount false 2>/dev/null || true
+gsettings set org.gnome.desktop.media-handling automount-open false 2>/dev/null || true
+```
+
+### Vérification
+
+Redémarrez la session graphique (ou rebootez) puis branchez une clé USB : aucune fenêtre ne doit apparaître. Le montage reste automatique (udisks2), seule la fenêtre est supprimée.
+
+> L'export USB de SnapForge fonctionne avec le montage automatique d'udisks2. Il ne faut désactiver **que** l'ouverture graphique, pas le montage lui-même.
+
+---
+
+## 11. Mise à jour
 
 ```bash
 cd /home/guillaume/SnapForge

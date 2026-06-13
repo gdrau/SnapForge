@@ -563,7 +563,7 @@ class StateMachine:
 
     def _on_usb_export_done(self, success: bool, message: str):
         self._ui.update_usb_status(message, done=True, success=success)
-        self._schedule_return(3)
+        self._schedule_return(5)
 
     # ------------------------------------------------------------------
     # Boutons physiques

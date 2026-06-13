@@ -533,9 +533,12 @@ class PygameUI:
         self._info = {"usb_status": status, "usb_done": False, "usb_success": True}
 
     def update_usb_status(self, status: str, done: bool = False, success: bool = True):
-        self._info["usb_status"]  = status
-        self._info["usb_done"]    = done
-        self._info["usb_success"] = success
+        # Sépare le message principal du sous-titre (séparateur \n)
+        parts = status.split("\n", 1)
+        self._info["usb_status"]   = parts[0]
+        self._info["usb_subtitle"] = parts[1] if len(parts) > 1 else ""
+        self._info["usb_done"]     = done
+        self._info["usb_success"]  = success
 
     @staticmethod
     def _confirm_quit_geometry(w, h, lm):
@@ -1458,11 +1461,12 @@ class PygameUI:
 
     def _r_usb_export(self):
         self._screen.fill(_DARK)
-        lm     = self._lm
-        cx     = self._w // 2
-        done    = self._info.get("usb_done", False)
-        success = self._info.get("usb_success", True)
-        status  = self._info.get("usb_status", "")
+        lm       = self._lm
+        cx       = self._w // 2
+        done     = self._info.get("usb_done", False)
+        success  = self._info.get("usb_success", True)
+        status   = self._info.get("usb_status", "")
+        subtitle = self._info.get("usb_subtitle", "")
 
         # Titre
         self._txt("Export USB", "xl", _WHITE, cx, int(self._h * 0.20), cx=True)
@@ -1473,23 +1477,25 @@ class PygameUI:
         pygame.draw.line(self._screen, _ACCENT,
                          (cx - bar_w // 2, line_y), (cx + bar_w // 2, line_y), 2)
 
-        # Message de statut
-        status_y = int(self._h * 0.50)
-        if done:
-            color = _GREEN if success else _RED
-        else:
-            color = _LGRAY
+        # Message de statut principal
+        status_y = int(self._h * 0.48)
+        color    = (_GREEN if success else _RED) if done else _LGRAY
         self._txt_fit(status, color, cx, status_y,
                       max_w=self._w - lm.margin * 2, cx=True)
 
+        # Sous-titre (ex: "42 fichiers copiés")
+        if subtitle:
+            self._txt_fit(subtitle, _GRAY, cx, int(self._h * 0.58),
+                          max_w=self._w - lm.margin * 2, cx=True)
+
         if done:
-            self._txt("Retour automatique...", "xs", _GRAY, cx, int(self._h * 0.65), cx=True)
+            self._txt("Retour automatique...", "xs", _GRAY, cx, int(self._h * 0.72), cx=True)
         else:
             # Animation 3 points
             t      = int(time.time() * 2) % 3
             dot_r  = max(5, int(lm.font_xs * 0.35))
             dot_sp = dot_r * 3
-            dy     = int(self._h * 0.65)
+            dy     = int(self._h * 0.68)
             for i in range(3):
                 pygame.draw.circle(self._screen,
                                    _ACCENT if i == t else _GRAY,
