@@ -948,6 +948,7 @@ class PygameUI:
                 self.show_reset_confirm()
 
             elif action == "cancel_reset":
+                self._admin_selection = 0
                 self._screen_name = "admin"
                 self._build_admin(settings)
 
@@ -1164,12 +1165,14 @@ class PygameUI:
             if sel == 1:   # Confirmer sélectionné
                 self._emit("confirm_reset")
             else:          # Annuler sélectionné
+                self._admin_selection = 0
                 settings = self._info.get("settings", {})
                 self._screen_name = "admin"
                 self._build_admin(settings)
             return True
 
         if event.key == pygame.K_ESCAPE:
+            self._admin_selection = 0
             settings = self._info.get("settings", {})
             self._screen_name = "admin"
             self._build_admin(settings)
