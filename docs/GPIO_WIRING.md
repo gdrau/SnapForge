@@ -6,15 +6,16 @@
 
 ## Tableau récapitulatif
 
-| Fonction        | Pin physique | BCM | Type   | Rôle                                      |
-|-----------------|:------------:|:---:|--------|-------------------------------------------|
-| Bouton 1 (photo)| 11           | 17  | Input  | Lancer une session / valider              |
-| LED photo       | 7            | 4   | Output | Prête à capturer                          |
-| Bouton 2 (print)| 13           | 27  | Input  | Option secondaire / impression            |
-| LED impression  | 15           | 22  | Output | Impression en cours / prête               |
-| LED startup     | 29           | 5   | Output | Application démarrée                      |
-| LED séquence    | 31           | 6   | Output | Séquence en cours (clignotant)            |
-| LED flash       | 33           | 13  | Output | Flash au moment de la capture             |
+| Fonction              | Pin physique | BCM | Type   | Rôle                                      |
+|-----------------------|:------------:|:---:|--------|-------------------------------------------|
+| Bouton 1 (photo)      | 11           | 17  | Input  | Lancer une session / valider              |
+| LED photo             | 7            | 4   | Output | Prête à capturer                          |
+| Bouton 2 (print/GIF)  | 13           | 27  | Input  | Option secondaire / GIF / impression      |
+| LED impression        | 15           | 22  | Output | Impression en cours / prête               |
+| LED startup           | 29           | 5   | Output | Application démarrée                      |
+| LED séquence          | 31           | 6   | Output | Séquence en cours (clignotant)            |
+| LED flash             | 33           | 13  | Output | Flash au moment de la capture             |
+| Bouton 3 (USB export) | 16           | 23  | Input  | Export photos vers clé USB (depuis IDLE)  |
 
 ---
 
@@ -46,6 +47,9 @@ Pin 30  (GND)     ──────────── LED séquence (cathode)
 
 Pin 33  (BCM13)   ──── R220Ω ── LED flash (anode)
 Pin 34  (GND)     ──────────── LED flash (cathode)
+
+Pin 16  (BCM23)   ──────────── Bouton 3 (USB export) NO
+Pin 14  (GND)     ──────────── Bouton 3 (USB export) autre borne
 ```
 
 ---
@@ -94,17 +98,23 @@ Un appui déclenche `sudo shutdown -h now` sans script supplémentaire.
 
 ## Navigation dans l'application
 
-| Bouton | État          | Action                               |
-|--------|---------------|--------------------------------------|
-| BTN 1  | Accueil       | Aller au choix de format             |
-| BTN 1  | Choix format  | Sélectionner option A (ex. 1 photo)  |
-| BTN 2  | Choix format  | Sélectionner option B (ex. 4 photos) |
-| BTN 1  | Preview       | Lancer le compte à rebours           |
-| BTN 1  | Résultat      | Imprimer (si impression activée)     |
-| BTN 2  | Résultat      | Continuer sans imprimer              |
-| BTN 1  | QR code       | Retour à l'accueil                   |
+| Bouton | État              | Action                                     |
+|--------|-------------------|--------------------------------------------|
+| BTN 1  | Accueil           | Ouvrir choix Photo / GIF                   |
+| BTN 1  | Choix Photo/GIF   | Sélectionner Photo → choix du nombre       |
+| BTN 2  | Choix Photo/GIF   | Sélectionner GIF → démarrer session GIF    |
+| BTN 1  | Choix nombre      | Sélectionner option A (ex. 1 photo)        |
+| BTN 2  | Choix nombre      | Sélectionner option B (ex. 4 photos)       |
+| BTN 1  | Preview           | Lancer le compte à rebours                 |
+| BTN 1  | Résultat          | Imprimer (si impression activée)           |
+| BTN 2  | Résultat          | Continuer sans imprimer                    |
+| BTN 1  | QR code           | Retour à l'accueil                         |
+| BTN 3  | Accueil (IDLE)    | Lancer l'export USB (si activé)            |
+| BTN 3  | Autre écran       | Ignoré                                     |
 
 > Le menu administration est accessible uniquement via la **touche ESC** au clavier.
+>
+> Inactivité 10 s sur les écrans de navigation (choix, preview, résultat) → retour automatique à l'accueil.
 
 ---
 
@@ -145,6 +155,6 @@ python scripts/test_gpio.py
 Pins utilisés (en gras) :
   7  = LED photo      11 = BTN photo
   13 = BTN print      15 = LED print
-  29 = LED startup    31 = LED séquence
-  33 = LED flash
+  16 = BTN USB        29 = LED startup
+  31 = LED séquence   33 = LED flash
 ```

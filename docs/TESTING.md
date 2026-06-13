@@ -111,20 +111,29 @@ Test OK ✓
 python src/app.py --windowed
 ```
 
-**Workflow de test :**
+**Workflow photo :**
 
 | Étape | Action | Résultat attendu |
 |-------|--------|-----------------|
-| 1 | Écran d'accueil | Nom du photobooth + bouton orange |
-| 2 | Cliquer "APPUYEZ POUR COMMENCER" | Écran choix format |
-| 3 | Cliquer "1 PHOTO" | Preview caméra |
-| 4 | Cliquer "CAPTURER" | Compte à rebours 3-2-1 |
-| 5 | Après capture | Traitement + assemblage |
-| 6 | Écran résultat | Photo finale + QR code |
-| 7 | Cliquer "RETOUR ACCUEIL" | Retour à l'accueil |
-| 8 | Touche `ESC` | Menu administration |
-| 9 | Naviguer dans les sous-menus | Admin fonctionnel |
-| 10 | Modifier le nom dans Config | Sauvegarde dans config.yaml |
+| 1 | Écran d'accueil | Nom du photobooth + 2 lignes de titre + "Bienvenue !" + carrousel |
+| 2 | Cliquer "APPUYEZ POUR COMMENCER" | Écran choix Photo / GIF |
+| 3 | Cliquer "PHOTO" | Écran choix du nombre de photos |
+| 4 | Cliquer "1 PHOTO" | Preview caméra |
+| 5 | Attendre 10s sans rien faire | Retour automatique à l'accueil |
+| 6 | Relancer, cliquer "CAPTURER" | Compte à rebours 3-2-1 |
+| 7 | Après capture | Traitement + assemblage template 400 DPI |
+| 8 | Écran résultat | Photo finale + QR code |
+| 9 | Cliquer "RETOUR ACCUEIL" | Retour à l'accueil |
+
+**Workflow GIF :**
+
+| Étape | Action | Résultat attendu |
+|-------|--------|-----------------|
+| 1 | Accueil → "GIF ANIMÉ" | Preview caméra |
+| 2 | Cliquer "CAPTURER" | N captures automatiques avec délai |
+| 3 | Génération | Écran "Traitement GIF..." |
+| 4 | Résultat | QR code + aperçu GIF animé |
+| 5 | Accueil | GIF visible dans le carrousel (miniature animée) |
 
 ---
 
@@ -139,8 +148,39 @@ python src/app.py --windowed
 - `↓`/`↑` : naviguer sans dépasser les limites (pas d'item fantôme)
 - `→` ou `Entrée` : ouvrir un sous-menu
 - `←` ou `ESC` : retour sans perdre la position dans le menu parent
-- Entrer dans **Configuration** : modifier le nom du photobooth au clavier
+- Entrer dans **Configuration** → modifier les deux lignes de nom + taille police
+- Entrer dans **Export USB** → activer / désactiver le bouton USB
 - Sauvegarder → vérifier que `config.yaml` est mis à jour
+
+---
+
+## 6b. Test inactivité
+
+```bash
+python src/app.py --windowed
+```
+
+- Aller sur l'écran "Choix Photo / GIF"
+- Ne rien faire pendant 10 secondes
+- Résultat attendu : retour automatique à l'accueil
+
+Le timer se remet à zéro à chaque clic ou touche clavier.
+L'admin et l'écran QR code ne sont **pas** affectés par l'inactivité.
+
+---
+
+## 6c. Test export USB (sur Raspberry Pi uniquement)
+
+1. Activer l'export dans Admin → Export USB → "Export USB activé" → ACTIVE → Sauvegarder
+2. Brancher une clé USB (auto-montage sous `/media/pi/`)
+3. Depuis l'écran d'accueil, appuyer sur **BTN 3 (PIN 16)**
+4. L'écran "Export USB" s'affiche avec les étapes de copie
+5. Après quelques secondes : "Export terminé — X fichiers copiés"
+6. Retour automatique à l'accueil après 3s
+7. Vérifier sur la clé : `Photos_PhotoBooth/Photos_Template/`, `Photos_Originales/`, `GIF_Animes/`
+
+**Sans clé USB :** "Aucune clé USB détectée" → retour automatique après 3s.
+**Hors écran d'accueil :** le bouton est ignoré.
 
 ---
 
@@ -197,15 +237,27 @@ INFO  state_machine: [FSM] IDLE -> IDLE
 ```
 Photo/
 ├── raw/
-│   └── 20260606_143022/                    ← une session
-│       ├── photo_0001_01_20260606_143022.jpg  ← brutes horodatées
-│       ├── photo_0001_02_20260606_143022.jpg
-│       └── qrcode.png
+│   └── 20260606_143022/                       ← une session photo
+│       ├── photo_0001_01_20260606_143022.jpg   ← brutes horodatées
+│       └── photo_0001_02_20260606_143022.jpg
 ├── final/
-│   └── snapforge_0001_20260606_143022.jpg  ← image finale
-├── exported/                               ← copie locale si upload activé
-└── tests/                                  ← photos des scripts de test
+│   └── snapforge_0001_20260606_143022.jpg     ← image finale (template 400 DPI)
+├── gifs/
+│   └── gif_0001_20260606_143022.gif           ← GIF animés générés
+├── thumbnails/
+│   └── gif_0001_20260606_143022.jpg           ← miniature du GIF pour carrousel
+├── exported/                                  ← copie locale si upload cloud activé
+└── tests/                                     ← photos des scripts de test
     ├── test_capture.jpg
     ├── test_qrcode.png
     └── test_ai_result.jpg
+```
+
+**Structure export USB (clé USB) :**
+
+```
+Photos_PhotoBooth/          (ou Photos_PhotoBooth_1, _2… si export précédent)
+├── Photos_Template/        ← images finales avec template, titre, QR code
+├── Photos_Originales/      ← photos brutes sans traitement
+└── GIF_Animes/             ← GIF animés
 ```

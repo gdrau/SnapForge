@@ -6,12 +6,12 @@ Un template est un fichier **JSON** dans le dossier `templates/`. Il définit la
 
 ## Templates inclus
 
-| Fichier                   | Format         | Dimensions   | Orientation |
-|---------------------------|----------------|--------------|-------------|
-| `portrait_1photo.json`    | 10×15 cm       | 1181×1772 px | Portrait    |
-| `landscape_4photos.json`  | 15×10 cm       | 1772×1181 px | Paysage     |
+| Fichier                   | Format         | Dimensions    | Orientation |
+|---------------------------|----------------|---------------|-------------|
+| `portrait_1photo.json`    | 10×15 cm       | 1575×2362 px  | Portrait    |
+| `landscape_4photos.json`  | 15×10 cm       | 2362×1575 px  | Paysage     |
 
-> Résolution 300 DPI — qualité impression optimale.
+> Résolution **400 DPI** — qualité impression maximale. JPEG à 97 % de qualité.
 
 ---
 
@@ -112,7 +112,7 @@ Zones de texte **dynamiques** — le contenu vient du menu admin (ou de `config.
 |---------|------------------------------------|
 | `x, y`  | Position du coin supérieur gauche  |
 | `width, height` | Dimensions de la zone        |
-| `size`  | Taille police en points (à 300 DPI → grands nombres) |
+| `size`  | Taille police en points (à 400 DPI : ≈ 60–120 pour un titre lisible) |
 | `color` | Couleur RGB [R, G, B]              |
 | `align` | `"center"`, `"left"`, ou `"right"` |
 
@@ -177,16 +177,18 @@ templates:
 
 ## Calcul des dimensions pour l'impression
 
-| Format papier | DPI | Dimensions pixels |
-|---------------|-----|-------------------|
-| 10×15 cm (A6) | 300 | 1181×1772 px      |
-| 15×10 cm (A6 paysage) | 300 | 1772×1181 px |
-| 13×18 cm | 300 | 1535×2126 px      |
-| 9×13 cm | 300 | 1063×1535 px      |
+| Format papier         | DPI | Dimensions pixels |
+|-----------------------|-----|-------------------|
+| 10×15 cm (A6)         | 400 | 1575×2362 px ✅   |
+| 15×10 cm (A6 paysage) | 400 | 2362×1575 px ✅   |
+| 10×15 cm (A6)         | 300 | 1181×1772 px      |
+| 15×10 cm (A6 paysage) | 300 | 1772×1181 px      |
+| 13×18 cm              | 300 | 1535×2126 px      |
+| 9×13 cm               | 300 | 1063×1535 px      |
 
 Formule : `px = cm ÷ 2.54 × DPI`
 
-**Marges de sécurité** : laisser 15-20 px de marge sur les bords pour l'impression.
+**Marges de sécurité** : laisser 20 px de marge sur les bords pour l'impression.
 
 ---
 

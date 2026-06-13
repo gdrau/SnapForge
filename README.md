@@ -15,11 +15,17 @@ Application photobooth moderne pour Raspberry Pi 4/5, compatible **Raspberry Pi 
 | LEDs d'état GPIO                | ✅  |    |
 | Caméra Pi v2 (Picamera2)        | ✅  |    |
 | Choix format 1 ou 4 photos (configurable) | ✅ | |
-| Templates 10×15 cm portrait/paysage | ✅ |  |
+| Mode GIF animé                  | ✅  |    |
+| Templates 10×15 cm portrait/paysage (400 DPI) | ✅ | |
 | Titre & description personnalisables | ✅ |  |
+| Deuxième ligne de titre configurable | ✅ |  |
 | Police personnalisable (TTF)    | ✅  |    |
 | Compte à rebours + flash LED    | ✅  |    |
+| Flash pre-delay configurable    | ✅  |    |
 | QR code image finale            | ✅  |    |
+| Carrousel d'accueil (photos + GIF) | ✅ |  |
+| Retour automatique à l'accueil (inactivité) | ✅ | |
+| Export USB (bouton GPIO)        | ✅  |    |
 | Démarrage auto (systemd)        | ✅  |    |
 | Mode hors ligne                 | ✅  |    |
 | Menu admin complet (sous-menus) | ✅  |    |
@@ -57,16 +63,19 @@ SnapForge/
 ├── src/
 │   ├── app.py                  # Point d'entrée
 │   ├── config.py               # Chargement YAML + backup sauvegarde
-│   ├── state_machine.py        # Machine d'états (FSM 11 états)
+│   ├── state_machine.py        # Machine d'états (FSM 13 états)
 │   ├── camera/
 │   │   └── picamera2_camera.py # Picamera2 réelle + simulée (PC)
 │   ├── ui/
-│   │   └── pygame_ui.py        # Interface Pygame plein écran
+│   │   ├── pygame_ui.py        # Interface Pygame plein écran
+│   │   ├── layout_manager.py   # Gestion des mises en page écran
+│   │   └── carousel.py         # Carrousel d'accueil (photos + GIF)
 │   ├── gpio/
 │   │   ├── buttons.py          # Boutons (bounce 50ms)
 │   │   └── lights.py           # LEDs avec clignotement
 │   ├── processing/
 │   │   ├── composer.py         # Composition par template JSON
+│   │   ├── gif_maker.py        # Génération GIF animé (Pillow)
 │   │   ├── ai_background.py    # rembg / mediapipe / remove.bg
 │   │   └── background_gen.py   # Générateur fond par défaut
 │   ├── cloud/
@@ -77,11 +86,13 @@ SnapForge/
 │   │   └── uploader.py         # Gestionnaire + file d'attente JSON
 │   ├── qr/
 │   │   └── qr_generator.py     # QR code PIL
-│   └── print/
-│       └── cups_printer.py     # CUPS via lp
+│   ├── print/
+│   │   └── cups_printer.py     # CUPS via lp
+│   └── usb/
+│       └── usb_exporter.py     # Export photos vers clé USB (3 dossiers)
 ├── templates/
-│   ├── portrait_1photo.json    # 1181×1772 px (10×15 cm portrait)
-│   └── landscape_4photos.json  # 1772×1181 px (15×10 cm paysage)
+│   ├── portrait_1photo.json    # 1575×2362 px (10×15 cm portrait, 400 DPI)
+│   └── landscape_4photos.json  # 2362×1575 px (15×10 cm paysage, 400 DPI)
 ├── assets/
 │   ├── fonts/                  # Polices TTF (ex: Montserrat-Regular.ttf)
 │   ├── backgrounds/            # Fonds pour IA et templates
@@ -107,30 +118,29 @@ SnapForge/
 ## Machine d'états
 
 ```
-IDLE → CHOOSE_FORMAT → PREVIEW → COUNTDOWN → CAPTURE
-                                    ↑              ↓ (photos restantes)
-                                    └──────────────┘
-                                    ↓ (série complète)
-                               PROCESSING → REVIEW (si impression)
-                                    ↓
-                               QR_DISPLAY ──────────────────→ IDLE
+IDLE → CHOOSE_TYPE → CHOOSE_FORMAT → PREVIEW → COUNTDOWN → CAPTURE
+            ↓ (GIF)                                              ↓
+         PREVIEW → ... → GIF_PROCESSING → QR_DISPLAY → IDLE
+                         PROCESSING → REVIEW → PRINT_WAIT → QR_DISPLAY → IDLE
 ```
 
-> Sans imprimante : PROCESSING → QR_DISPLAY directement (upload en arrière-plan).
+> Sans imprimante : PROCESSING → QR_DISPLAY directement (upload en arrière-plan).  
+> Inactivité 10 s (configurable) : retour automatique à IDLE depuis tout état sauf ADMIN et QR_DISPLAY.
 
 ---
 
 ## GPIO (brochage physique / BOARD)
 
-| Rôle              | Pin physique | BCM |
-|-------------------|:------------:|:---:|
-| Bouton 1 (photo)  | 11           | 17  |
-| LED photo         | 7            | 4   |
-| Bouton 2 (print)  | 13           | 27  |
-| LED print         | 15           | 22  |
-| LED startup       | 29           | 5   |
-| LED séquence      | 31           | 6   |
-| LED flash         | 33           | 13  |
+| Rôle              | Pin physique | BCM | Direction | Description |
+|-------------------|:------------:|:---:|:---------:|-------------|
+| Bouton 1 (photo)  | 11           | 17  | Input     | Déclenchement / validation |
+| LED photo         | 7            | 4   | Output    | État photo |
+| Bouton 2 (print)  | 13           | 27  | Input     | Impression / navigation |
+| LED print         | 15           | 22  | Output    | État impression |
+| LED startup       | 29           | 5   | Output    | Démarrage |
+| LED séquence      | 31           | 6   | Output    | Séquence en cours |
+| LED flash         | 33           | 13  | Output    | Flash photo |
+| Bouton USB export | 16           | 23  | Input     | Export photos vers clé USB |
 
 Voir [docs/GPIO_WIRING.md](docs/GPIO_WIRING.md) pour le schéma détaillé.
 
@@ -142,9 +152,10 @@ Structure en sous-menus, navigable au clavier :
 
 ```
 ADMINISTRATION
-├── Plugins           QR Code · IA · Impression · Upload
-├── Photos/Templates  Formats · Templates · Titre · Description
-├── Configuration     Nom du photobooth · Délai
+├── Plugins           QR Code · IA · Impression · Upload · Carrousel
+├── Photos / Templates  Formats · Templates · Titre · Description
+├── Configuration     Nom (2 lignes) · Taille police · Délai
+├── Export USB        Activer/désactiver export clé USB
 ├── Diagnostic GPIO   Boutons · LEDs · Journal
 └── Sauvegarder / Quitter
 ```
@@ -174,12 +185,13 @@ Télécharger gratuitement sur [fonts.google.com](https://fonts.google.com) (for
 
 ## Templates 10×15 cm
 
-| Template              | Dimensions  | Orientation | Photos |
-|-----------------------|-------------|-------------|--------|
-| `portrait_1photo`     | 1181×1772 px | Portrait    | 1      |
-| `landscape_4photos`   | 1772×1181 px | Paysage     | 4      |
+| Template              | Dimensions   | Orientation | Photos | Résolution |
+|-----------------------|--------------|-------------|--------|:----------:|
+| `portrait_1photo`     | 1575×2362 px | Portrait    | 1      | 400 DPI    |
+| `landscape_4photos`   | 2362×1575 px | Paysage     | 4      | 400 DPI    |
 
-Chaque template supporte un **titre** et une **description** configurables depuis le menu admin.  
+Chaque template supporte un **titre** (deux lignes configurables, taille de police ajustable) et une **description** configurables depuis le menu admin.  
+Les images sont exportées en JPEG qualité 97 %.  
 Voir [docs/TEMPLATES.md](docs/TEMPLATES.md) pour créer ses propres templates.
 
 ---
