@@ -573,6 +573,11 @@ class PygameUI:
     def show_reset_confirm(self):
         """Dialogue de confirmation de remise à zéro."""
         self._screen_name = "reset_confirm"
+        self._info["reset_sel"] = 0   # 0 = Annuler (défaut sécurisé), 1 = Confirmer
+        self._build_reset_confirm_buttons(0)
+
+    def _build_reset_confirm_buttons(self, sel: int):
+        """Construit les boutons Annuler/Confirmer avec la sélection active."""
         lm  = self._lm
         w, h = self._w, self._h
         box_w = min(int(w * 0.88), int(lm.font_md * 22))
@@ -584,10 +589,12 @@ class PygameUI:
         bh    = lm.btn_h
         by    = box_y + box_h - bh - gap * 2
         self._buttons = [
-            _Btn((box_x,          by, half, bh), "Annuler",  _GRAY,
-                 font=self._fonts["sm"], action="cancel_reset",  radius=8),
+            _Btn((box_x,          by, half, bh), "Annuler",   _GRAY,
+                 font=self._fonts["sm"], action="cancel_reset",  radius=8,
+                 selected=(sel == 0)),
             _Btn((box_x+half+gap, by, half, bh), "Confirmer", _RED,
-                 font=self._fonts["sm"], action="confirm_reset", radius=8),
+                 font=self._fonts["sm"], action="confirm_reset", radius=8,
+                 selected=(sel == 1)),
         ]
 
     # ------------------------------------------------------------------
@@ -1134,15 +1141,30 @@ class PygameUI:
         self._running = False
 
     def _handle_reset_confirm_key(self, event) -> bool:
-        """Entrée = confirmer la remise à zéro  |  Échap = annuler."""
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            self._emit("confirm_reset")
+        """Navigation Left/Right entre Annuler et Confirmer. Enter = valider la sélection."""
+        sel = self._info.get("reset_sel", 0)
+
+        if event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB):
+            new_sel = 1 - sel
+            self._info["reset_sel"] = new_sel
+            self._build_reset_confirm_buttons(new_sel)
             return True
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if sel == 1:   # Confirmer sélectionné
+                self._emit("confirm_reset")
+            else:          # Annuler sélectionné
+                settings = self._info.get("settings", {})
+                self._screen_name = "admin"
+                self._build_admin(settings)
+            return True
+
         if event.key == pygame.K_ESCAPE:
             settings = self._info.get("settings", {})
             self._screen_name = "admin"
             self._build_admin(settings)
             return True
+
         return True
 
     def _handle_confirm_quit_key(self, event) -> bool:
