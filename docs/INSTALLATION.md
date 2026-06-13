@@ -249,12 +249,25 @@ printing:
 
 ## 10. Export USB — désactiver l'automount graphique
 
-Par défaut, Raspberry Pi OS ouvre une fenêtre de gestionnaire de fichiers à chaque insertion de clé USB, ce qui sort l'utilisateur de SnapForge. Il faut désactiver ce comportement.
+Par défaut, Raspberry Pi OS affiche une notification ou ouvre le gestionnaire de fichiers à chaque insertion de clé USB, ce qui sort l'utilisateur de SnapForge. Voici comment le désactiver selon votre version.
 
-### Raspberry Pi OS (PCManFM / LXDE)
+### Étape 1 — Identifier votre environnement de bureau
 
 ```bash
-# Désactiver l'automount et l'autorun dans PCManFM
+echo $DESKTOP_SESSION
+# ou
+ps aux | grep -E "lxsession|lxqt|wayfire|openbox" | grep -v grep | head -3
+```
+
+---
+
+### Raspberry Pi OS (LXDE / PCManFM) — le plus courant
+
+```bash
+# Trouver le profil actif
+ls ~/.config/pcmanfm/
+
+# Appliquer sur le profil LXDE-pi (standard Raspberry Pi OS)
 mkdir -p ~/.config/pcmanfm/LXDE-pi
 cat > ~/.config/pcmanfm/LXDE-pi/pcmanfm.conf << 'EOF'
 [volume]
@@ -262,20 +275,55 @@ mount_on_startup=0
 mount_removable=0
 autorun=0
 EOF
+
+# Si votre profil s'appelle "LXDE" (pas "LXDE-pi"), adaptez :
+mkdir -p ~/.config/pcmanfm/LXDE
+cp ~/.config/pcmanfm/LXDE-pi/pcmanfm.conf ~/.config/pcmanfm/LXDE/pcmanfm.conf
 ```
 
-### Raspberry Pi OS Bookworm/Trixie (si basé sur GNOME/Wayfire)
+Puis redémarrez PCManFM :
 
 ```bash
-gsettings set org.gnome.desktop.media-handling automount false 2>/dev/null || true
-gsettings set org.gnome.desktop.media-handling automount-open false 2>/dev/null || true
+pkill pcmanfm; sleep 1
+pcmanfm --desktop &
 ```
+
+---
+
+### Raspberry Pi OS Bookworm/Trixie (GNOME ou Wayfire)
+
+```bash
+gsettings set org.gnome.desktop.media-handling automount false
+gsettings set org.gnome.desktop.media-handling automount-open false
+gsettings set org.gnome.desktop.media-handling autorun-never true
+```
+
+---
+
+### Solution universelle — désactiver via autostart (toutes versions)
+
+Crée un script au démarrage de session qui désactive l'automount :
+
+```bash
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/disable-automount.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=Disable USB Automount
+Exec=bash -c "gsettings set org.gnome.desktop.media-handling automount false 2>/dev/null; gsettings set org.gnome.desktop.media-handling automount-open false 2>/dev/null"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+EOF
+```
+
+---
 
 ### Vérification
 
-Redémarrez la session graphique (ou rebootez) puis branchez une clé USB : aucune fenêtre ne doit apparaître. Le montage reste automatique (udisks2), seule la fenêtre est supprimée.
+Après redémarrage, branchez une clé USB : aucune fenêtre ne doit apparaître.
 
-> L'export USB de SnapForge fonctionne avec le montage automatique d'udisks2. Il ne faut désactiver **que** l'ouverture graphique, pas le montage lui-même.
+> **Important :** le montage automatique (udisks2) reste actif — c'est ce dont SnapForge a besoin pour détecter la clé. Seule l'ouverture graphique est désactivée.
 
 ---
 

@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,11 @@ _EXPORT_BASE = "Photos_PhotoBooth"
 
 
 def find_usb_mount() -> Optional[Path]:
-    """Détecte automatiquement la première clé USB montée sous /media ou /run/media."""
+    """Détecte la première clé USB montée sous /media ou /run/media.
+
+    Utilise os.path.ismount() pour ne retourner que de vrais points de montage,
+    évitant de confondre /media/<user>/ (répertoire vide sans USB) avec un support.
+    """
     for base in (Path("/media"), Path("/run/media")):
         if not base.exists():
             continue
@@ -20,30 +24,34 @@ def find_usb_mount() -> Optional[Path]:
             for lvl1 in sorted(base.iterdir()):
                 if not lvl1.is_dir():
                     continue
+                # Cas 1 : /media/<device> — point de montage direct
+                if os.path.ismount(lvl1):
+                    logger.info(f"Clé USB trouvée (direct) : {lvl1}")
+                    return lvl1
+                # Cas 2 : /media/<user>/<device> — chercher un niveau plus bas
                 try:
-                    sub_dirs = [s for s in lvl1.iterdir() if s.is_dir()]
+                    for lvl2 in sorted(lvl1.iterdir()):
+                        if lvl2.is_dir() and os.path.ismount(lvl2):
+                            logger.info(f"Clé USB trouvée : {lvl2}")
+                            return lvl2
                 except PermissionError:
-                    continue
-                if sub_dirs:
-                    # /media/<user>/<device> — ex: /media/pi/USB_DRIVE
-                    for mount in sorted(sub_dirs):
-                        try:
-                            list(mount.iterdir())
-                            logger.info(f"Clé USB trouvée : {mount}")
-                            return mount
-                        except PermissionError:
-                            pass
-                else:
-                    # /media/<device> direct
-                    try:
-                        list(lvl1.iterdir())
-                        logger.info(f"Clé USB trouvée : {lvl1}")
-                        return lvl1
-                    except PermissionError:
-                        pass
+                    pass
         except PermissionError:
             pass
     return None
+
+
+def check_mount_writable(mount: Path) -> bool:
+    """Vérifie qu'un point de montage est accessible en lecture/écriture."""
+    try:
+        if not os.access(mount, os.R_OK | os.W_OK):
+            return False
+        test = mount / ".snapforge_test"
+        test.touch()
+        test.unlink()
+        return True
+    except Exception:
+        return False
 
 
 class UsbExporter:
@@ -83,7 +91,14 @@ class UsbExporter:
                 logger.warning("Aucune clé USB détectée")
                 done_cb(False, "Aucune clé USB détectée")
                 return
-            logger.info(f"Clé USB : {mount}")
+            logger.info(f"Clé USB détectée : {mount}")
+
+            # Vérifier l'accès avant toute copie
+            if not check_mount_writable(mount):
+                logger.warning(f"Clé USB inaccessible : {mount}")
+                done_cb(False, "Clé USB détectée mais inaccessible")
+                return
+            logger.info(f"Clé USB accessible en lecture/écriture")
 
             export_dir = self._resolve_export_dir(mount)
             logger.info(f"Dossier export : {export_dir}")
