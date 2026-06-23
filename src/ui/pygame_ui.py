@@ -645,6 +645,8 @@ class PygameUI:
                  "desc": "Formats · Templates · Titres"},
                 {"type": "nav", "label": "Configuration",       "target": "general",
                  "desc": "Nom du photobooth · Délai"},
+                {"type": "nav", "label": "GIF animé",            "target": "gif",
+                 "desc": "Délai entre photos"},
                 {"type": "nav", "label": "Export USB",           "target": "usb",
                  "desc": "Copie des photos sur clé USB"},
                 {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
@@ -710,6 +712,15 @@ class PygameUI:
                  "fmt": fmt_px},
                 {"type": "sep"},
                 {"type": "cycle", "label": "Compte à rebours",  "key": "countdown", "values": [2,3,5,10], "fmt": fmt_s},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+
+        if page == "gif":
+            return [
+                {"type": "cycle", "label": "Délai entre photos", "key": "gif_delay_s",
+                 "values": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+                 "fmt": lambda v: f"{v} s"},
                 {"type": "sep"},
                 {"type": "back"},
             ]
@@ -1360,15 +1371,10 @@ class PygameUI:
         total = self._info.get("total", 0)
         self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
-        cd          = self._info.get("countdown", 0)
-        smile       = self._info.get("smile", False)
-        gif_counter = self._info.get("gif_counter", "")
+        cd    = self._info.get("countdown", 0)
+        smile = self._info.get("smile", False)
         if smile:
             self._shadow_txt("Souriez !", "xl", _ACCENT,
-                             self._w // 2, self._h // 2, cx=True)
-        elif gif_counter:
-            # Mode GIF : compteur de frames "Image 3/6"
-            self._shadow_txt(gif_counter, "lg", _ACCENT,
                              self._w // 2, self._h // 2, cx=True)
         elif cd > 0:
             self._shadow_txt(str(cd), "xxl", _WHITE, self._w // 2, self._h // 2, cx=True)

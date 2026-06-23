@@ -252,9 +252,9 @@ class StateMachine:
                     self._go(State.PROCESSING)
             else:
                 if self._session.is_gif_mode:
-                    # Capture rapide : délai court, pas de compte à rebours
-                    delay = self._config.get("gif.delay_between_frames_ms", 300) / 1000
-                    self._ui.show_gif_frame_counter(n, total)
+                    # Délai configurable entre captures GIF, "Souriez !" visible avant le flash
+                    delay = float(self._config.get("gif.delay_between_frames_seconds", 1.0))
+                    self._ui.show_smile()
                     time.sleep(delay)
                     self._go(State.CAPTURE)
                 else:
@@ -495,6 +495,8 @@ class StateMachine:
             "carousel_enabled":  self._config.get("home_carousel.enabled", True),
             "carousel_mode":     self._config.get("home_carousel.mode", "table"),
             "carousel_interval": int(self._config.get("home_carousel.interval_seconds", 4)),
+            # GIF animé
+            "gif_delay_s":   float(self._config.get("gif.delay_between_frames_seconds", 1.0)),
             # Export USB
             "usb_enabled":   bool(self._config.get("usb_export.enabled", False)),
             # Metadata UI
@@ -545,6 +547,7 @@ class StateMachine:
             "home_carousel.mode":          settings.get("carousel_mode", "table"),
             "home_carousel.interval_seconds": int(settings.get("carousel_interval", 4)),
             "usb_export.enabled":             bool(settings.get("usb_enabled", False)),
+            "gif.delay_between_frames_seconds": float(settings.get("gif_delay_s", 1.0)),
         }
         for key, val in updates.items():
             self._config.set(key, val)

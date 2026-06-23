@@ -75,7 +75,7 @@ ai:
 gif:
   enabled: true              # Afficher le bouton "GIF ANIMÉ" sur l'écran de choix
   frames_count: 6            # Nombre d'images capturées
-  delay_between_frames_ms: 300  # Délai entre deux captures (ms)
+  delay_between_frames_seconds: 1.0  # Délai entre deux captures (secondes)
   frame_duration_ms: 180     # Durée d'affichage de chaque frame dans le GIF (ms)
   loop: 0                    # 0 = boucle infinie
   resize_width: 720          # Largeur max du GIF (pour limiter le poids)
