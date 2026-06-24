@@ -1394,6 +1394,25 @@ class PygameUI:
         if frame is not None:
             try:
                 surf = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
+                # Appliquer le même center-crop que _fit_crop dans composer :
+                # on extrait la région centrale qui correspond au slot final.
+                if slot_ar and slot_ar > 0:
+                    sw, sh = surf.get_size()
+                    src_r = sw / max(sh, 1)
+                    if src_r > slot_ar:
+                        # Frame plus large que le slot : crop latéral
+                        _ch = sh
+                        _cw = int(sh * slot_ar)
+                        _cx = (sw - _cw) // 2
+                        _cy = 0
+                    else:
+                        # Frame plus haute que le slot : crop vertical
+                        _cw = sw
+                        _ch = int(sw / slot_ar)
+                        _cx = 0
+                        _cy = (sh - _ch) // 2
+                    if _cw > 0 and _ch > 0 and _cw <= sw and _ch <= sh:
+                        surf = surf.subsurface((_cx, _cy, _cw, _ch))
                 surf = pygame.transform.scale(surf, (box_w, box_h))
                 self._screen.blit(surf, (box_x, box_y))
             except Exception:
