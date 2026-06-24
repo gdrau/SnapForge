@@ -230,10 +230,14 @@ class StateMachine:
                 if slot:
                     return slot["width"] / slot["height"]
                 return 1.778  # fallback 16:9
-            # Portrait GIF : ratio portrait effectif (caméra pivotée 90°)
+            # Portrait GIF : même slot que 1 photo
+            tpl_name = self._config.get("templates.photo_1", "portrait_1photo")
+            slot = self._composer.first_slot(tpl_name)
+            if slot:
+                return slot["width"] / slot["height"]
             cap_w = int(self._config.get("camera.resolution_width", 3280))
             cap_h = int(self._config.get("camera.resolution_height", 2464))
-            return cap_h / cap_w  # ≈ 0.75 portrait
+            return cap_h / cap_w
         n = self._session.layout_count
         tpl_name = self._config.get(f"templates.photo_{n}", "portrait_1photo")
         slot = self._composer.first_slot(tpl_name)
@@ -394,12 +398,12 @@ class StateMachine:
                 self._session.timestamp, self._session._number
             )
             self._ui.show_processing("Création du GIF...")
-            # Crop paysage si orientation = landscape
-            target_ar = None
-            if self._session.gif_orientation == "landscape":
-                tpl_name = self._config.get("templates.photo_4", "landscape_4photos")
-                slot = self._composer.first_slot(tpl_name)
-                target_ar = slot["width"] / slot["height"] if slot else 1.778
+            # Crop frames au slot du template correspondant à l'orientation choisie
+            n = 4 if self._session.gif_orientation == "landscape" else 1
+            tpl_name = self._config.get(f"templates.photo_{n}",
+                                        "landscape_4photos" if n == 4 else "portrait_1photo")
+            slot = self._composer.first_slot(tpl_name)
+            target_ar = (slot["width"] / slot["height"]) if slot else None
             result = self._gif_maker.make_gif(frames, gif_path, target_ar=target_ar)
 
             if not result:

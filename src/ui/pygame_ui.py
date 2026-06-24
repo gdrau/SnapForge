@@ -339,38 +339,28 @@ class PygameUI:
         bw  = int(self._w * 0.78) if self._is_portrait else (self._w - 3 * m) // 2
         bh  = max(60, int(self._h * 0.20))
         font = self._best_font_for("PAYSAGE", bw, pad=30)
-        back_w = int(self._w * 0.40)
-        back_h = max(40, lm.btn_h)
 
         if self._is_portrait:
             gap    = max(14, int(self._h * 0.025))
             total_h = 2 * bh + gap
             y0     = self._h // 2 - total_h // 2
             x      = (self._w - bw) // 2
-            back_y = y0 + total_h + max(20, int(self._h * 0.04))
             self._buttons = [
                 _Btn((x, y0,            bw, bh), "PORTRAIT", _BLUE,
                      font=font, action="gif_portrait",  radius=20),
                 _Btn((x, y0 + bh + gap, bw, bh), "PAYSAGE",  _GREEN,
                      font=font, action="gif_landscape", radius=20),
-                _Btn(((self._w - back_w) // 2, back_y, back_w, back_h),
-                     "< Retour", _PANEL,
-                     font=self._fonts["sm"], action="back_to_choose_type", radius=10),
             ]
         else:
             gap = m
             y   = self._h // 2 - bh // 2
             x0  = m
             x1  = m * 2 + bw
-            back_y = y + bh + max(20, int(self._h * 0.05))
             self._buttons = [
                 _Btn((x0, y, bw, bh), "PORTRAIT", _BLUE,
                      font=font, action="gif_portrait",  radius=20),
                 _Btn((x1, y, bw, bh), "PAYSAGE",  _GREEN,
                      font=font, action="gif_landscape", radius=20),
-                _Btn(((self._w - back_w) // 2, back_y, back_w, back_h),
-                     "< Retour", _PANEL,
-                     font=self._fonts["sm"], action="back_to_choose_type", radius=10),
             ]
 
     def update_format_selection(self, selected: int):
@@ -1405,9 +1395,7 @@ class PygameUI:
         """Niveau 3 GIF : Portrait ou Paysage ?"""
         self._screen.fill(_DARK)
         self._txt_fit("GIF ANIMÉ", _WHITE,
-                      self._w // 2, int(self._h * 0.10), max_w=self._w - 20, cx=True)
-        self._txt_fit("Format de sortie :", _GRAY,
-                      self._w // 2, int(self._h * 0.20), max_w=self._w - 20, cx=True)
+                      self._w // 2, int(self._h * 0.12), max_w=self._w - 20, cx=True)
         hint = "BTN 1 = Portrait   |   BTN 2 = Paysage" if not self._is_portrait else ""
         if hint:
             self._txt_fit(hint, _GRAY, self._w // 2, int(self._h * 0.92),
