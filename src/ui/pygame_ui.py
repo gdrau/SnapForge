@@ -400,12 +400,12 @@ class PygameUI:
         except Exception:
             return pygame.font.Font(None, size)
 
-    def show_preview(self, total: int, remaining: int, safe_rect=None):
+    def show_preview(self, total: int, remaining: int, slot_ar=None):
         self._screen_name = "preview"
         self._info = {"total": total, "remaining": remaining, "countdown": 0,
-                      "safe_rect": safe_rect}
+                      "slot_ar": slot_ar}
         lm = self._lm
-        # Bouton centré verticalement dans les 8 % bas de l'écran (marge confortable)
+        # Bouton fixe en bas de l'écran (sous la boîte preview quelle que soit sa taille)
         btn_cy = self._h - lm.btn_h - lm.gap_md
         self._buttons = [
             self._btn_auto("CAPTURER", _ACCENT, self._w // 2, btn_cy,
@@ -1355,55 +1355,67 @@ class PygameUI:
         self._txt_fit(hint, _GRAY, self._w // 2, hint_y,
                       max_w=self._w - 20, cx=True)
 
-    def _draw_preview_overlay(self, safe_rect: tuple):
-        """Masque les zones hors cadrage et trace un cadre sur la zone sûre."""
-        lr, tr, wr, hr = safe_rect
-        sx = int(lr * self._w)
-        sy = int(tr * self._h)
-        sw = int(wr * self._w)
-        sh = int(hr * self._h)
+    def _preview_box(self, slot_ar):
+        """Calcule (box_x, box_y, box_w, box_h) pour la boîte preview centrée.
 
-        def _fill(rx, ry, rw, rh):
-            if rw > 0 and rh > 0:
-                ov = pygame.Surface((rw, rh), pygame.SRCALPHA)
-                ov.fill((0, 0, 0, 160))
-                self._screen.blit(ov, (rx, ry))
+        La boîte est contenue dans l'espace entre l'en-tête et le bouton CAPTURER,
+        avec des marges latérales.  Son ratio est celui du slot template (slot_ar).
+        """
+        lm      = self._lm
+        TOP     = 44                           # espace en-tête pour le compteur
+        SIDE    = 16                           # marge latérale
+        btn_top = self._h - lm.btn_h - lm.gap_md
+        avail_w = self._w - 2 * SIDE
+        avail_h = btn_top - lm.gap_md - TOP   # hauteur libre entre header et bouton
 
-        _fill(0,       0,       self._w,            sy)              # haut
-        _fill(0,       sy + sh, self._w,            self._h - sy - sh)  # bas
-        _fill(0,       sy,      sx,                 sh)              # gauche
-        _fill(sx + sw, sy,      self._w - sx - sw,  sh)              # droite
-        # Cadre blanc autour de la zone active
-        pygame.draw.rect(self._screen, (255, 255, 255), (sx, sy, sw, sh), 2)
+        ar = slot_ar if (slot_ar and slot_ar > 0) else (avail_w / max(avail_h, 1))
+
+        if avail_w / max(avail_h, 1) >= ar:   # limité par la hauteur disponible
+            box_h = avail_h
+            box_w = int(box_h * ar)
+        else:                                  # limité par la largeur disponible
+            box_w = avail_w
+            box_h = int(box_w / ar)
+
+        box_x = (self._w - box_w) // 2
+        box_y = TOP + (avail_h - box_h) // 2
+        return box_x, box_y, box_w, box_h
 
     def _r_preview(self):
+        # Fond sombre — la preview est contenue dans une boîte, pas en plein écran
+        self._screen.fill(_DARK)
+
+        slot_ar = self._info.get("slot_ar")
+        box_x, box_y, box_w, box_h = self._preview_box(slot_ar)
+
+        # Rendu de la frame caméra dans la boîte
         with self._preview_lock:
             frame = self._preview_frame
         if frame is not None:
             try:
                 surf = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
-                surf = pygame.transform.scale(surf, (self._w, self._h))
-                self._screen.blit(surf, (0, 0))
+                surf = pygame.transform.scale(surf, (box_w, box_h))
+                self._screen.blit(surf, (box_x, box_y))
             except Exception:
-                self._screen.fill(_BLACK)
-        else:
-            self._screen.fill(_BLACK)
+                pass
 
-        safe_rect = self._info.get("safe_rect")
-        if safe_rect is not None:
-            self._draw_preview_overlay(safe_rect)
+        # Cadre de délimitation de la zone active
+        pygame.draw.rect(self._screen, (160, 160, 160), (box_x, box_y, box_w, box_h), 1)
 
+        # Compteur de photos (en-tête, hors boîte)
         remaining = self._info.get("remaining", 0)
-        total = self._info.get("total", 0)
+        total     = self._info.get("total", 0)
         self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
+        # Souriez / compte à rebours centré sur la boîte preview
+        box_cx = box_x + box_w // 2
+        box_cy = box_y + box_h // 2
         cd    = self._info.get("countdown", 0)
         smile = self._info.get("smile", False)
         if smile:
-            self._shadow_txt("Souriez !", "xl", _ACCENT,
-                             self._w // 2, self._h // 2, cx=True)
+            self._shadow_txt("Souriez !", "xl", _ACCENT, box_cx, box_cy, cx=True)
         elif cd > 0:
-            self._shadow_txt(str(cd), "xxl", _WHITE, self._w // 2, self._h // 2, cx=True)
+            self._shadow_txt(str(cd), "xxl", _WHITE, box_cx, box_cy, cx=True)
 
     def _r_processing(self):
         self._screen.fill(_DARK)

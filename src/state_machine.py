@@ -208,44 +208,27 @@ class StateMachine:
             gif_enabled=False   # GIF déjà géré au niveau 1
         )
 
-    def _preview_safe_rect(self):
-        """Calcule le rectangle sûr (zone réellement utilisée dans le template final).
-        Retourne (left, top, width, height) en fractions 0..1, ou None si pas de crop.
+    def _preview_slot_ar(self):
+        """Retourne le ratio largeur/hauteur du slot du template final (ou de la capture GIF).
 
-        La caméra est pivotée 90° : l'axe LARGEUR capteur correspond à l'axe HAUTEUR
-        affichage, et l'axe HAUTEUR capteur correspond à l'axe LARGEUR affichage.
+        Ce ratio détermine les proportions de la boîte preview à l'écran, de façon
+        à ce que l'utilisateur cadre exactement ce qui sera dans la photo finale.
         """
         if self._session.is_gif_mode:
-            return None
+            # GIF sans template : ratio portrait effectif (caméra pivotée 90°)
+            cap_w = int(self._config.get("camera.resolution_width", 3280))
+            cap_h = int(self._config.get("camera.resolution_height", 2464))
+            return cap_h / cap_w  # ≈ 0.75 portrait
         n = self._session.layout_count
         tpl_name = self._config.get(f"templates.photo_{n}", "portrait_1photo")
         slot = self._composer.first_slot(tpl_name)
-        if not slot:
-            return None
-        cap_w = int(self._config.get("camera.resolution_width", 3280))
-        cap_h = int(self._config.get("camera.resolution_height", 2464))
-        cap_ar = cap_w / cap_h
-        slot_ar = slot["width"] / slot["height"]
-        if abs(cap_ar - slot_ar) < 0.02:
-            return None
-        if cap_ar > slot_ar:
-            # Fit à la hauteur capteur, rognage côtés capteur
-            # → côtés capteur = haut/bas affichage (caméra pivotée 90°)
-            used = slot_ar / cap_ar
-            m = (1.0 - used) / 2
-            return (0.0, m, 1.0, used)
-        else:
-            # Fit à la largeur capteur, rognage haut/bas capteur
-            # → haut/bas capteur = gauche/droite affichage
-            used = cap_ar / slot_ar
-            m = (1.0 - used) / 2
-            return (m, 0.0, used, 1.0)
+        return (slot["width"] / slot["height"]) if slot else None
 
     def _enter_preview(self):
         self._lights.sequence_on()
-        safe_rect = self._preview_safe_rect()
+        slot_ar = self._preview_slot_ar()
         self._ui.show_preview(self._session.layout_count, self._session.remaining,
-                              safe_rect=safe_rect)
+                              slot_ar=slot_ar)
         self._camera.start_preview(self._ui.update_preview_frame)
 
     def _enter_countdown(self):
