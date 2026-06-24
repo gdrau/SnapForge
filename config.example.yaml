@@ -33,7 +33,7 @@ session:
 camera:
   resolution_width: 3280
   resolution_height: 2464
-  preview_width: 800
+  preview_width: 640   # doit avoir le même ratio que resolution_width/height (4:3) pour un FOV identique preview/photo
   preview_height: 480
   flash_pre_delay: 0.05          # Délai (s) entre allumage flash et déclenchement (0 = simultané)
   rotation: 0
