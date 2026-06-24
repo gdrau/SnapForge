@@ -15,6 +15,7 @@ class State(Enum):
     IDLE = auto()
     CHOOSE_TYPE   = auto()    # Photo ou GIF ?  (niveau 1)
     CHOOSE_FORMAT = auto()    # 1 photo, 4 photos ?  (niveau 2, si Photo)
+    CHOOSE_GIF_ORIENTATION = auto()  # Portrait ou Paysage ? (niveau 3, si GIF)
     PREVIEW = auto()
     COUNTDOWN = auto()
     CAPTURE = auto()
@@ -50,6 +51,7 @@ def _clear_dir(path: Path) -> int:
 _INACTIVITY_STATES = frozenset({
     State.CHOOSE_TYPE,
     State.CHOOSE_FORMAT,
+    State.CHOOSE_GIF_ORIENTATION,
     State.PREVIEW,
     State.REVIEW,
     State.PRINT_WAIT,
@@ -59,9 +61,10 @@ _INACTIVITY_STATES = frozenset({
 class Session:
 
     def __init__(self, layout_count: int, raw_dir: str, final_dir: str,
-                 is_gif_mode: bool = False):
+                 is_gif_mode: bool = False, gif_orientation: str = "portrait"):
         self.layout_count = layout_count
         self.is_gif_mode  = is_gif_mode
+        self.gif_orientation  = gif_orientation   # "portrait" | "landscape"
         self.timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_dir  = Path(raw_dir) / self.timestamp
         self.session_dir.mkdir(parents=True, exist_ok=True)
@@ -170,6 +173,7 @@ class StateMachine:
             State.IDLE:          self._enter_idle,
             State.CHOOSE_TYPE:   self._enter_choose_type,
             State.CHOOSE_FORMAT: self._enter_choose_format,
+            State.CHOOSE_GIF_ORIENTATION: self._enter_choose_gif_orientation,
             State.PREVIEW:       self._enter_preview,
             State.COUNTDOWN:     self._enter_countdown,
             State.CAPTURE:       self._enter_capture,
@@ -208,6 +212,11 @@ class StateMachine:
             gif_enabled=False   # GIF déjà géré au niveau 1
         )
 
+    def _enter_choose_gif_orientation(self):
+        """Écran niveau 3 : Portrait ou Paysage pour le GIF animé."""
+        self._lights.sequence_blink()
+        self._ui.show_choose_gif_orientation()
+
     def _preview_slot_ar(self):
         """Retourne le ratio largeur/hauteur du slot du template final (ou de la capture GIF).
 
@@ -215,7 +224,13 @@ class StateMachine:
         à ce que l'utilisateur cadre exactement ce qui sera dans la photo finale.
         """
         if self._session.is_gif_mode:
-            # GIF sans template : ratio portrait effectif (caméra pivotée 90°)
+            if self._session.gif_orientation == "landscape":
+                tpl_name = self._config.get("templates.photo_4", "landscape_4photos")
+                slot = self._composer.first_slot(tpl_name)
+                if slot:
+                    return slot["width"] / slot["height"]
+                return 1.778  # fallback 16:9
+            # Portrait GIF : ratio portrait effectif (caméra pivotée 90°)
             cap_w = int(self._config.get("camera.resolution_width", 3280))
             cap_h = int(self._config.get("camera.resolution_height", 2464))
             return cap_h / cap_w  # ≈ 0.75 portrait
@@ -379,7 +394,13 @@ class StateMachine:
                 self._session.timestamp, self._session._number
             )
             self._ui.show_processing("Création du GIF...")
-            result = self._gif_maker.make_gif(frames, gif_path)
+            # Crop paysage si orientation = landscape
+            target_ar = None
+            if self._session.gif_orientation == "landscape":
+                tpl_name = self._config.get("templates.photo_4", "landscape_4photos")
+                slot = self._composer.first_slot(tpl_name)
+                target_ar = slot["width"] / slot["height"] if slot else 1.778
+            result = self._gif_maker.make_gif(frames, gif_path, target_ar=target_ar)
 
             if not result:
                 self._session.error = "Génération GIF échouée"
@@ -645,6 +666,10 @@ class StateMachine:
             self._go(State.CHOOSE_FORMAT)
         elif self._state == State.CHOOSE_FORMAT:
             self._start_session(self._option_a)
+        elif self._state == State.CHOOSE_GIF_ORIENTATION:
+            # BTN1 = Portrait
+            frames = int(self._config.get("gif.frames_count", 6))
+            self._start_session(frames, is_gif=True, gif_orientation="portrait")
         elif self._state == State.PREVIEW:
             self._go(State.COUNTDOWN)
         elif self._state == State.REVIEW:
@@ -659,9 +684,12 @@ class StateMachine:
         if self._state == State.USB_EXPORT:
             return
         if self._state == State.CHOOSE_TYPE:
-            # GIF sélectionné → démarrer directement
+            # GIF sélectionné → choisir l'orientation
+            self._go(State.CHOOSE_GIF_ORIENTATION)
+        elif self._state == State.CHOOSE_GIF_ORIENTATION:
+            # BTN2 = Paysage
             frames = int(self._config.get("gif.frames_count", 6))
-            self._start_session(frames, is_gif=True)
+            self._start_session(frames, is_gif=True, gif_orientation="landscape")
         elif self._state == State.CHOOSE_FORMAT:
             self._start_session(self._option_b)
         elif self._state == State.REVIEW:
@@ -695,6 +723,8 @@ class StateMachine:
         if action == "back_to_choose_type":
             if self._state == State.CHOOSE_FORMAT:
                 self._go(State.CHOOSE_TYPE if self._gif_enabled() else State.IDLE)
+            elif self._state == State.CHOOSE_GIF_ORIENTATION:
+                self._go(State.CHOOSE_TYPE)
             return
 
         if action == "admin_save":
@@ -715,10 +745,18 @@ class StateMachine:
                 self._start_session(count)
 
         elif action == "start_gif":
-            # CHOOSE_TYPE ajouté → clic souris sur le bouton fonctionne
             if self._state in (State.IDLE, State.CHOOSE_FORMAT, State.CHOOSE_TYPE):
+                self._go(State.CHOOSE_GIF_ORIENTATION)
+
+        elif action == "gif_portrait":
+            if self._state == State.CHOOSE_GIF_ORIENTATION:
                 frames = int(self._config.get("gif.frames_count", 6))
-                self._start_session(frames, is_gif=True)
+                self._start_session(frames, is_gif=True, gif_orientation="portrait")
+
+        elif action == "gif_landscape":
+            if self._state == State.CHOOSE_GIF_ORIENTATION:
+                frames = int(self._config.get("gif.frames_count", 6))
+                self._start_session(frames, is_gif=True, gif_orientation="landscape")
 
         elif action == "start_countdown":
             if self._state == State.PREVIEW:
@@ -799,9 +837,10 @@ class StateMachine:
         time.sleep(2.5)
         self._go(State.IDLE)
 
-    def _start_session(self, layout_count: int, is_gif: bool = False):
+    def _start_session(self, layout_count: int, is_gif: bool = False,
+                       gif_orientation: str = "portrait"):
         self._session = Session(layout_count, self._raw_dir, self._final_dir,
-                                is_gif_mode=is_gif)
+                                is_gif_mode=is_gif, gif_orientation=gif_orientation)
         self._go(State.PREVIEW)
 
     def _schedule_return(self, delay: float):

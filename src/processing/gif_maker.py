@@ -44,7 +44,8 @@ class GifMaker:
     def enabled(self) -> bool:
         return bool(self._config.get("gif.enabled", True) and _PIL_OK)
 
-    def make_gif(self, frame_paths: List[str], output_path: str) -> Optional[str]:
+    def make_gif(self, frame_paths: List[str], output_path: str,
+                 target_ar: Optional[float] = None) -> Optional[str]:
         """
         Génère le GIF depuis les frames capturées.
         Retourne le chemin du GIF ou None en cas d'erreur.
@@ -61,6 +62,18 @@ class GifMaker:
             frames_pil = []
             for path in frame_paths:
                 img = Image.open(path).convert("RGB")
+                # Crop au ratio cible (même logique que _fit_crop dans composer)
+                if target_ar is not None:
+                    src_r = img.width / img.height
+                    if abs(src_r - target_ar) > 0.01:
+                        if src_r > target_ar:
+                            new_w = int(img.height * target_ar)
+                            left  = (img.width - new_w) // 2
+                            img   = img.crop((left, 0, left + new_w, img.height))
+                        else:
+                            new_h = int(img.width / target_ar)
+                            top   = (img.height - new_h) // 2
+                            img   = img.crop((0, top, img.width, top + new_h))
                 # Redimensionner en conservant le ratio
                 if self._resize_w and img.width > self._resize_w:
                     ratio = self._resize_w / img.width

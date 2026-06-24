@@ -310,7 +310,7 @@ class PygameUI:
                 _Btn((x, y0, bw, bh), "PHOTO",     _BLUE,
                      font=font, action="open_choose_format", radius=20),
                 _Btn((x, y0 + bh + gap, bw, bh), "GIF ANIME", (148, 103, 189),
-                     font=font, action="start_gif",           radius=20),
+                     font=font, action="open_choose_gif_orientation",           radius=20),
             ]
         else:
             gap = m
@@ -321,7 +321,7 @@ class PygameUI:
                 _Btn((x0, y, bw, bh), "PHOTO",     _BLUE,
                      font=font, action="open_choose_format", radius=20),
                 _Btn((x1, y, bw, bh), "GIF ANIME", (148, 103, 189),
-                     font=font, action="start_gif",           radius=20),
+                     font=font, action="open_choose_gif_orientation",           radius=20),
             ]
 
     def show_choose_format(self, layouts: List[int], selected: int,
@@ -329,6 +329,49 @@ class PygameUI:
         self._screen_name = "choose_format"
         self._info = {"layouts": layouts, "selected": selected, "gif_enabled": gif_enabled}
         self._rebuild_format_buttons(layouts, selected, gif_enabled)
+
+    def show_choose_gif_orientation(self):
+        """Écran niveau 3 : Portrait ou Paysage pour le GIF animé."""
+        self._screen_name = "choose_gif_orientation"
+        self._info = {}
+        lm  = self._lm
+        m   = lm.margin
+        bw  = int(self._w * 0.78) if self._is_portrait else (self._w - 3 * m) // 2
+        bh  = max(60, int(self._h * 0.20))
+        font = self._best_font_for("PAYSAGE", bw, pad=30)
+        back_w = int(self._w * 0.40)
+        back_h = max(40, lm.btn_h)
+
+        if self._is_portrait:
+            gap    = max(14, int(self._h * 0.025))
+            total_h = 2 * bh + gap
+            y0     = self._h // 2 - total_h // 2
+            x      = (self._w - bw) // 2
+            back_y = y0 + total_h + max(20, int(self._h * 0.04))
+            self._buttons = [
+                _Btn((x, y0,            bw, bh), "PORTRAIT", _BLUE,
+                     font=font, action="gif_portrait",  radius=20),
+                _Btn((x, y0 + bh + gap, bw, bh), "PAYSAGE",  _GREEN,
+                     font=font, action="gif_landscape", radius=20),
+                _Btn(((self._w - back_w) // 2, back_y, back_w, back_h),
+                     "< Retour", _PANEL,
+                     font=self._fonts["sm"], action="back_to_choose_type", radius=10),
+            ]
+        else:
+            gap = m
+            y   = self._h // 2 - bh // 2
+            x0  = m
+            x1  = m * 2 + bw
+            back_y = y + bh + max(20, int(self._h * 0.05))
+            self._buttons = [
+                _Btn((x0, y, bw, bh), "PORTRAIT", _BLUE,
+                     font=font, action="gif_portrait",  radius=20),
+                _Btn((x1, y, bw, bh), "PAYSAGE",  _GREEN,
+                     font=font, action="gif_landscape", radius=20),
+                _Btn(((self._w - back_w) // 2, back_y, back_w, back_h),
+                     "< Retour", _PANEL,
+                     font=self._fonts["sm"], action="back_to_choose_type", radius=10),
+            ]
 
     def update_format_selection(self, selected: int):
         self._info["selected"] = selected
@@ -1225,6 +1268,8 @@ class PygameUI:
                 self._emit("open_choose_format")   # Photo par défaut
             elif self._screen_name == "choose_format":
                 self._emit("back_to_choose_type")
+            elif self._screen_name == "choose_gif_orientation":
+                self._emit("back_to_choose_type")
             elif self._screen_name == "preview":
                 self._emit("start_countdown")
 
@@ -1237,6 +1282,7 @@ class PygameUI:
             "idle":          self._r_idle,
             "choose_type":   self._r_choose_type,
             "choose_format": self._r_choose,
+            "choose_gif_orientation": self._r_choose_gif_orientation,
             "preview":       self._r_preview,
             "processing":    self._r_processing,
             "review":        self._r_review,
@@ -1354,6 +1400,18 @@ class PygameUI:
         hint = "Appuyez pour commencer" if self._is_portrait else "Appuyez sur votre choix pour commencer"
         self._txt_fit(hint, _GRAY, self._w // 2, hint_y,
                       max_w=self._w - 20, cx=True)
+
+    def _r_choose_gif_orientation(self):
+        """Niveau 3 GIF : Portrait ou Paysage ?"""
+        self._screen.fill(_DARK)
+        self._txt_fit("GIF ANIMÉ", _WHITE,
+                      self._w // 2, int(self._h * 0.10), max_w=self._w - 20, cx=True)
+        self._txt_fit("Format de sortie :", _GRAY,
+                      self._w // 2, int(self._h * 0.20), max_w=self._w - 20, cx=True)
+        hint = "BTN 1 = Portrait   |   BTN 2 = Paysage" if not self._is_portrait else ""
+        if hint:
+            self._txt_fit(hint, _GRAY, self._w // 2, int(self._h * 0.92),
+                          max_w=self._w - 20, cx=True)
 
     def _preview_box(self, slot_ar):
         """Calcule (box_x, box_y, box_w, box_h) pour la boîte preview centrée.
