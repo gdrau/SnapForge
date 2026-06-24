@@ -60,6 +60,11 @@ class Composer:
     def available(self) -> List[str]:
         return list(self._templates.keys())
 
+    def first_slot(self, template_name: str) -> Optional[dict]:
+        """Retourne le premier slot {'x','y','width','height'} du template, ou None."""
+        t = self._templates.get(template_name)
+        return t.slot(0) if t else None
+
     def compose(
         self,
         photo_paths: List[str],

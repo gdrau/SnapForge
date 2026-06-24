@@ -400,9 +400,10 @@ class PygameUI:
         except Exception:
             return pygame.font.Font(None, size)
 
-    def show_preview(self, total: int, remaining: int):
+    def show_preview(self, total: int, remaining: int, safe_rect=None):
         self._screen_name = "preview"
-        self._info = {"total": total, "remaining": remaining, "countdown": 0}
+        self._info = {"total": total, "remaining": remaining, "countdown": 0,
+                      "safe_rect": safe_rect}
         lm = self._lm
         # Bouton centré verticalement dans les 8 % bas de l'écran (marge confortable)
         btn_cy = self._h - lm.btn_h - lm.gap_md
@@ -1354,6 +1355,27 @@ class PygameUI:
         self._txt_fit(hint, _GRAY, self._w // 2, hint_y,
                       max_w=self._w - 20, cx=True)
 
+    def _draw_preview_overlay(self, safe_rect: tuple):
+        """Masque les zones hors cadrage et trace un cadre sur la zone sûre."""
+        lr, tr, wr, hr = safe_rect
+        sx = int(lr * self._w)
+        sy = int(tr * self._h)
+        sw = int(wr * self._w)
+        sh = int(hr * self._h)
+
+        def _fill(rx, ry, rw, rh):
+            if rw > 0 and rh > 0:
+                ov = pygame.Surface((rw, rh), pygame.SRCALPHA)
+                ov.fill((0, 0, 0, 160))
+                self._screen.blit(ov, (rx, ry))
+
+        _fill(0,       0,       self._w,            sy)              # haut
+        _fill(0,       sy + sh, self._w,            self._h - sy - sh)  # bas
+        _fill(0,       sy,      sx,                 sh)              # gauche
+        _fill(sx + sw, sy,      self._w - sx - sw,  sh)              # droite
+        # Cadre blanc autour de la zone active
+        pygame.draw.rect(self._screen, (255, 255, 255), (sx, sy, sw, sh), 2)
+
     def _r_preview(self):
         with self._preview_lock:
             frame = self._preview_frame
@@ -1366,6 +1388,10 @@ class PygameUI:
                 self._screen.fill(_BLACK)
         else:
             self._screen.fill(_BLACK)
+
+        safe_rect = self._info.get("safe_rect")
+        if safe_rect is not None:
+            self._draw_preview_overlay(safe_rect)
 
         remaining = self._info.get("remaining", 0)
         total = self._info.get("total", 0)
