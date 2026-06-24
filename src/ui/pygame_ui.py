@@ -172,7 +172,7 @@ class PygameUI:
         même ratios, mêmes positions relatives, police adaptée à la taille d'écran.
         """
         pygame.init()
-        pygame.mouse.set_visible(not self._fullscreen)
+        pygame.mouse.set_visible(False)
 
         if self._fullscreen:
             info = pygame.display.Info()
@@ -290,6 +290,10 @@ class PygameUI:
         ]
         # Recharger les photos du carrousel après chaque retour à l'accueil
         self._carousel.refresh()
+
+    def clear_carousel(self):
+        """Vide immédiatement le carrousel (à appeler avant refresh après un reset)."""
+        self._carousel.clear()
 
     def show_choose_type(self):
         """Écran niveau 1 : Photo ou GIF ?"""
@@ -598,10 +602,10 @@ class PygameUI:
         box_x, box_y, box_w, box_h, bx, by, half, bh, gap = \
             self._confirm_quit_geometry(self._w, self._h, lm)
         self._buttons = [
-            _Btn((bx,          by, half, bh), "Oui, quitter", _RED,
-                 font=self._fonts["sm"], action="quit_app",    radius=8),
-            _Btn((bx+half+gap, by, half, bh), "Annuler",      _GRAY,
+            _Btn((bx,          by, half, bh), "Annuler",   _GRAY,
                  font=self._fonts["sm"], action="cancel_quit", radius=8),
+            _Btn((bx+half+gap, by, half, bh), "Confirmer", _RED,
+                 font=self._fonts["sm"], action="quit_app",    radius=8),
         ]
 
     def show_reset_progress(self, message: str = ""):
@@ -951,6 +955,7 @@ class PygameUI:
 
             self._render()
             self._clock.tick(self._fps)
+        pygame.mouse.set_visible(True)
         pygame.quit()
 
     def _handle_buttons(self, event, scrolled_event=None):
@@ -1706,7 +1711,7 @@ class PygameUI:
 
         # Textes dans les 65 % hauts de la boîte (boutons dans les 35 % bas)
         cx = self._w // 2
-        self._txt_fit("Quitter SnapForge ?", _WHITE, cx,
+        self._txt_fit("Voulez-vous vraiment quitter SnapForge ?", _WHITE, cx,
                       box_y + int(box_h * 0.18), max_w=box_w - 20, cx=True)
         self._txt_fit("L'application va se fermer.", _GRAY, cx,
                       box_y + int(box_h * 0.36), max_w=box_w - 20, cx=True)

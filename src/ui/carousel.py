@@ -142,6 +142,13 @@ class CarouselManager:
         if self.enabled:
             self._start_load()
 
+    def clear(self):
+        """Vide immédiatement le cache mémoire — appeler avant refresh() après un reset."""
+        with self._lock:
+            self._items       = []
+            self._cache_items = []
+            self._cache_key   = None
+
     def update(self):
         if not self.enabled:
             return

@@ -837,6 +837,7 @@ class StateMachine:
         self._config.save()
         logger.info("Remise à zéro terminée")
 
+        self._ui.clear_carousel()
         self._ui.update_reset_progress("Remise à zéro terminée", done=True)
         time.sleep(2.5)
         self._go(State.IDLE)
