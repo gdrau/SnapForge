@@ -226,10 +226,10 @@ class StateMachine:
         if self._session.is_gif_mode:
             if self._session.gif_orientation == "landscape":
                 tpl_name = self._config.get("templates.photo_4", "landscape_4photos")
-                slot = self._composer.first_slot(tpl_name)
-                if slot:
-                    return slot["width"] / slot["height"]
-                return 1.778  # fallback 16:9
+                ar = self._composer.template_ar(tpl_name)
+                if ar:
+                    return ar
+                return 1.5  # fallback 3:2
             # Portrait GIF : même slot que 1 photo
             tpl_name = self._config.get("templates.photo_1", "portrait_1photo")
             slot = self._composer.first_slot(tpl_name)
@@ -402,8 +402,11 @@ class StateMachine:
             n = 4 if self._session.gif_orientation == "landscape" else 1
             tpl_name = self._config.get(f"templates.photo_{n}",
                                         "landscape_4photos" if n == 4 else "portrait_1photo")
-            slot = self._composer.first_slot(tpl_name)
-            target_ar = (slot["width"] / slot["height"]) if slot else None
+            if n == 4:
+                target_ar = self._composer.template_ar(tpl_name)
+            else:
+                slot = self._composer.first_slot(tpl_name)
+                target_ar = (slot["width"] / slot["height"]) if slot else None
             result = self._gif_maker.make_gif(frames, gif_path, target_ar=target_ar)
 
             if not result:

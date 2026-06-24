@@ -65,6 +65,11 @@ class Composer:
         t = self._templates.get(template_name)
         return t.slot(0) if t else None
 
+    def template_ar(self, template_name: str) -> Optional[float]:
+        """Retourne le ratio largeur/hauteur du canvas du template, ou None."""
+        t = self._templates.get(template_name)
+        return (t.width / t.height) if t else None
+
     def compose(
         self,
         photo_paths: List[str],
