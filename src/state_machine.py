@@ -662,6 +662,11 @@ class StateMachine:
         self._log_gpio(f"BTN1 presse (etat={self._state.name})")
         if self._state == State.USB_EXPORT:
             return
+        if self._state == State.ADMIN:
+            # BTN1 = Annuler dans les dialogues de confirmation
+            if self._ui.screen_name in ("confirm_quit", "reset_confirm"):
+                self._ui.cancel_confirm_overlay()
+            return
         if self._state == State.IDLE:
             # Niveau 1 : Photo ou GIF ?
             self._go(State.CHOOSE_TYPE if self._gif_enabled() else State.CHOOSE_FORMAT)
@@ -686,6 +691,17 @@ class StateMachine:
         """BTN2 = action secondaire / droite."""
         self._log_gpio(f"BTN2 presse (etat={self._state.name})")
         if self._state == State.USB_EXPORT:
+            return
+        if self._state == State.ADMIN:
+            # BTN2 = Confirmer dans les dialogues de confirmation
+            sn = self._ui.screen_name
+            if sn == "confirm_quit":
+                logger.info("Fermeture propre demandee via BTN2")
+                self.stop()
+                self._ui.stop()
+            elif sn == "reset_confirm":
+                self._ui.show_reset_progress("Remise à zéro en cours...")
+                threading.Thread(target=self._do_reset_event, daemon=True).start()
             return
         if self._state == State.CHOOSE_TYPE:
             # GIF sélectionné → choisir l'orientation

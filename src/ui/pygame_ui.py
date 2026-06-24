@@ -152,6 +152,10 @@ class PygameUI:
         self._carousel = CarouselManager(config)
 
     @property
+    def screen_name(self) -> str:
+        return self._screen_name
+
+    @property
     def _is_portrait(self) -> bool:
         """True si l'écran est en mode portrait (h > w, ex: 480×800)."""
         return self._h > self._w
@@ -172,7 +176,6 @@ class PygameUI:
         même ratios, mêmes positions relatives, police adaptée à la taille d'écran.
         """
         pygame.init()
-        pygame.mouse.set_visible(False)
 
         if self._fullscreen:
             info = pygame.display.Info()
@@ -187,6 +190,9 @@ class PygameUI:
             self._display = pygame.display.set_mode((rw, rh), flags)
         else:
             self._display = pygame.display.set_mode((self._config_w, self._config_h))
+
+        # Masquer le curseur après set_mode (obligatoire sur Windows/certains systèmes)
+        pygame.mouse.set_visible(False)
 
         # self._screen = self._display : rendu direct à la résolution native (net)
         self._screen         = self._display
@@ -598,15 +604,29 @@ class PygameUI:
         NE PAS effacer self._info — contient les settings admin pour le retour.
         """
         self._screen_name = "confirm_quit"
+        self._info["quit_sel"] = 0   # 0 = Annuler (défaut sécurisé), 1 = Confirmer
+        self._build_confirm_quit_buttons(0)
+
+    def _build_confirm_quit_buttons(self, sel: int):
+        """Construit les boutons Annuler/Confirmer avec la sélection active."""
         lm = self._lm
         box_x, box_y, box_w, box_h, bx, by, half, bh, gap = \
             self._confirm_quit_geometry(self._w, self._h, lm)
         self._buttons = [
             _Btn((bx,          by, half, bh), "Annuler",   _GRAY,
-                 font=self._fonts["sm"], action="cancel_quit", radius=8),
+                 font=self._fonts["sm"], action="cancel_quit", radius=8,
+                 selected=(sel == 0)),
             _Btn((bx+half+gap, by, half, bh), "Confirmer", _RED,
-                 font=self._fonts["sm"], action="quit_app",    radius=8),
+                 font=self._fonts["sm"], action="quit_app",    radius=8,
+                 selected=(sel == 1)),
         ]
+
+    def cancel_confirm_overlay(self):
+        """Retour au menu admin depuis une boîte de confirmation (Annuler GPIO)."""
+        self._admin_selection = 0
+        self._screen_name = "admin"
+        settings = self._info.get("settings", {})
+        self._build_admin(settings)
 
     def show_reset_progress(self, message: str = ""):
         self._screen_name = "reset_progress"
@@ -1231,20 +1251,26 @@ class PygameUI:
         return True
 
     def _handle_confirm_quit_key(self, event) -> bool:
-        """
-        Gère le clavier sur l'écran de confirmation de fermeture.
-        Entrée/O/Y = confirmer  |  Échap/N/Annuler = annuler
-        """
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER,
-                         pygame.K_y, pygame.K_o):
-            self._emit("quit_app")
+        """Navigation Left/Right entre Annuler et Confirmer. Enter = valider la sélection."""
+        sel = self._info.get("quit_sel", 0)
+
+        if event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB):
+            new_sel = 1 - sel
+            self._info["quit_sel"] = new_sel
+            self._build_confirm_quit_buttons(new_sel)
             return True
-        if event.key in (pygame.K_ESCAPE, pygame.K_n):
-            settings = self._info.get("settings", {})
-            self._admin_selection = 0   # reset → bouton Quitter redevient rouge
-            self._screen_name = "admin"
-            self._build_admin(settings)
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if sel == 1:   # Confirmer sélectionné
+                self._emit("quit_app")
+            else:          # Annuler sélectionné
+                self.cancel_confirm_overlay()
             return True
+
+        if event.key == pygame.K_ESCAPE:
+            self.cancel_confirm_overlay()
+            return True
+
         return True   # consomme toutes les touches en mode confirmation
 
     def _on_key(self, event):
@@ -1709,14 +1735,11 @@ class PygameUI:
         pygame.draw.rect(self._screen, _DARK2, (box_x, box_y, box_w, box_h), border_radius=radius)
         pygame.draw.rect(self._screen, _RED,   (box_x, box_y, box_w, box_h), 2, border_radius=radius)
 
-        # Textes dans les 65 % hauts de la boîte (boutons dans les 35 % bas)
         cx = self._w // 2
         self._txt_fit("Voulez-vous vraiment quitter SnapForge ?", _WHITE, cx,
-                      box_y + int(box_h * 0.18), max_w=box_w - 20, cx=True)
+                      box_y + int(box_h * 0.22), max_w=box_w - 20, cx=True)
         self._txt_fit("L'application va se fermer.", _GRAY, cx,
-                      box_y + int(box_h * 0.36), max_w=box_w - 20, cx=True)
-        self._txt_fit("Entree = confirmer     Echap = annuler", _DISABLED, cx,
-                      box_y + int(box_h * 0.52), max_w=box_w - 20, cx=True)
+                      box_y + int(box_h * 0.42), max_w=box_w - 20, cx=True)
 
     def _r_reset_confirm(self):
         """Dialogue de confirmation de remise à zéro."""
