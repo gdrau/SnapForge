@@ -128,8 +128,9 @@ def capture_at(cam, out_path: Path, quality: int, label: str):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_str = str(out_path)
 
+    cam.options["quality"] = quality
     t0 = time.monotonic()
-    cam.switch_mode_and_capture_file(cfg, out_str, options={"quality": quality})
+    cam.switch_mode_and_capture_file(cfg, out_str)
     elapsed = time.monotonic() - t0
 
     size_ko = out_path.stat().st_size / 1024
