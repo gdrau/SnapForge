@@ -129,7 +129,7 @@ def capture_at(cam, out_path: Path, quality: int, label: str):
     out_str = str(out_path)
 
     t0 = time.monotonic()
-    cam.switch_mode_and_capture_file(cfg, out_str, quality=quality)
+    cam.switch_mode_and_capture_file(cfg, out_str, options={"quality": quality})
     elapsed = time.monotonic() - t0
 
     size_ko = out_path.stat().st_size / 1024
