@@ -35,10 +35,12 @@ camera:
   resolution_height: 2464
   preview_width: 640   # doit avoir le même ratio que resolution_width/height (4:3) pour un FOV identique preview/photo
   preview_height: 480
-  flash_pre_delay: 0.05          # Délai (s) entre allumage flash et déclenchement (0 = simultané)
+  flash_pre_delay: 2.05          # Délai (s) entre allumage flash et déclenchement (0 = simultané)
   rotation: 0
-  flip_horizontal: false
+  flip_horizontal: true
   flip_vertical: false
+  flash_enabled: true          # Activer le flash pour les captures
+  flash_mode: "photo"          # "photo" = flash par prise | "continu" = allumé depuis le décompte
 
 gpio:
   enabled: true

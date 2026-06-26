@@ -776,6 +776,11 @@ class PygameUI:
                 {"type": "sep"},
                 {"type": "cycle", "label": "Compte à rebours",  "key": "countdown", "values": [2,3,5,10], "fmt": fmt_s},
                 {"type": "sep"},
+                {"type": "toggle", "label": "Flash activé",   "key": "flash_enabled", "fmt": fmt_on},
+                {"type": "cycle",  "label": "Mode flash",      "key": "flash_mode",
+                 "values": ["photo", "continu"],
+                 "fmt": lambda v: "PHOTO" if v == "photo" else "CONTINU"},
+                {"type": "sep"},
                 {"type": "back"},
             ]
 

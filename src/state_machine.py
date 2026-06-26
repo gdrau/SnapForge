@@ -254,7 +254,15 @@ class StateMachine:
         self._lights.sequence_blink()
         threading.Thread(target=self._run_countdown, daemon=True).start()
 
+    def _flash_enabled(self) -> bool:
+        return bool(self._config.get("camera.flash_enabled", True))
+
+    def _flash_mode(self) -> str:
+        return str(self._config.get("camera.flash_mode", "photo"))
+
     def _run_countdown(self):
+        if self._flash_enabled() and self._flash_mode() == "continu":
+            self._lights.flash_on()
         for i in range(self._countdown_s, 0, -1):
             self._ui.show_countdown(i)
             time.sleep(1)
@@ -265,14 +273,14 @@ class StateMachine:
 
     def _enter_capture(self):
         path = self._session.next_raw_path()
-        self._lights.flash_async()
+        if self._flash_enabled() and self._flash_mode() == "photo":
+            self._lights.flash_async()
         threading.Thread(target=self._do_capture, args=(path,), daemon=True).start()
 
     def _do_capture(self, path: str):
         try:
-            # Laisser la LED atteindre sa luminosité max avant le déclenchement
             pre_delay = float(self._config.get("camera.flash_pre_delay", 0.05))
-            if pre_delay > 0:
+            if pre_delay > 0 and self._flash_enabled() and self._flash_mode() == "photo":
                 time.sleep(pre_delay)
             self._camera.capture(path)
             self._session.raw_photos.append(path)
@@ -282,6 +290,8 @@ class StateMachine:
             self._ui.show_capture_result(path, self._session.remaining)
 
             if self._session.is_complete:
+                if self._flash_enabled() and self._flash_mode() == "continu":
+                    self._lights.flash_off()
                 self._camera.stop_preview()
                 if self._session.is_gif_mode:
                     self._go(State.GIF_PROCESSING)
@@ -545,6 +555,9 @@ class StateMachine:
             "gif_delay_s":   float(self._config.get("gif.delay_between_frames_seconds", 1.0)),
             # Export USB
             "usb_enabled":   bool(self._config.get("usb_export.enabled", False)),
+            # Flash
+            "flash_enabled": bool(self._config.get("camera.flash_enabled", True)),
+            "flash_mode":    str(self._config.get("camera.flash_mode", "photo")),
             # Metadata UI
             "_available_templates": tpl_names,
             "_gpio_log":       list(self._gpio_log),
@@ -594,6 +607,8 @@ class StateMachine:
             "home_carousel.interval_seconds": int(settings.get("carousel_interval", 4)),
             "usb_export.enabled":             bool(settings.get("usb_enabled", False)),
             "gif.delay_between_frames_seconds": float(settings.get("gif_delay_s", 1.0)),
+            "camera.flash_enabled":           bool(settings.get("flash_enabled", True)),
+            "camera.flash_mode":              str(settings.get("flash_mode", "photo")),
         }
         for key, val in updates.items():
             self._config.set(key, val)

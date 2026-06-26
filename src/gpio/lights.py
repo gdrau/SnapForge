@@ -136,6 +136,16 @@ class LightManager:
     def flash_async(self, duration: Optional[float] = None):
         threading.Thread(target=self.flash, args=(duration,), daemon=True).start()
 
+    def flash_on(self):
+        led = self._get("flash")
+        if led:
+            led.on()
+
+    def flash_off(self):
+        led = self._get("flash")
+        if led:
+            led.off()
+
     def print_ready(self):
         led = self._get("print")
         if led:
