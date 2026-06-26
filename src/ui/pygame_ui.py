@@ -493,12 +493,13 @@ class PygameUI:
     def show_review(self, photo_path: str, printer_enabled: bool = False):
         self._screen_name = "review"
         self._info = {"photo": photo_path}
-        m = 20
-        bh, bw = 60, (self._w - 3 * m) // 2
+        m  = 20
+        bh = max(80, self._lm.btn_h)
+        bw = (self._w - 3 * m) // 2
         if printer_enabled:
             self._buttons = [
-                self._btn("IMPRIMER", _BLUE, (m, self._h - bh - m, bw, bh), "sm", "confirm_print"),
-                self._btn("CONTINUER", _GREEN, (m*2 + bw, self._h - bh - m, bw, bh), "sm", "skip_print"),
+                self._btn("IMPRIMER",  _BLUE,  (m,        self._h - bh - m, bw, bh), "md", "confirm_print"),
+                self._btn("CONTINUER", _GREEN, (m*2 + bw, self._h - bh - m, bw, bh), "md", "skip_print"),
             ]
         else:
             self._buttons = [
@@ -506,10 +507,14 @@ class PygameUI:
             ]
 
     def show_print_wait(self):
+        """Cache les boutons : le message d'impression apparaît en premier plan."""
+        self._buttons = []
         self._info["status"] = "Impression en cours..."
 
     def show_print_result(self, success: bool):
-        self._info["status"] = "Imprime !" if success else "Erreur d'impression"
+        """Cache les boutons : le message résultat apparaît en premier plan."""
+        self._buttons = []
+        self._info["status"] = "Imprimé !" if success else "Erreur d'impression"
 
     def show_qr(self, photo_path: str, qr_image, upload_url, gif_path: str = None):
         self._screen_name = "qr"
@@ -1526,19 +1531,39 @@ class PygameUI:
 
     def _r_review(self):
         self._screen.fill(_BLACK)
+        lm     = self._lm
+        status = self._info.get("status")
+        m      = 20
+        bh     = max(80, lm.btn_h)
+
+        # Zone disponible pour la photo (réduite quand les boutons sont visibles)
+        reserved = (bh + m * 2) if not status else 0
         photo = self._info.get("photo")
         if photo and Path(photo).exists():
             try:
                 img = pygame.image.load(photo)
                 iw, ih = img.get_size()
-                scale = min((self._w - 40) / iw, (self._h - 110) / ih)
+                scale = min((self._w - 40) / iw, (self._h - reserved - 30) / ih)
                 nw, nh = int(iw * scale), int(ih * scale)
                 img = pygame.transform.scale(img, (nw, nh))
                 self._screen.blit(img, ((self._w - nw) // 2, 15))
             except Exception as e:
                 logger.error(f"Review: {e}")
-        if self._info.get("status"):
-            self._txt(self._info["status"], "sm", _ACCENT, self._w // 2, self._h - 90, cx=True)
+
+        if status:
+            # Bandeaux de statut centré, en premier plan, sur fond semi-transparent
+            is_error = "erreur" in status.lower() or "error" in status.lower()
+            color    = _RED if is_error else _GREEN
+            bw       = self._w - 2 * m
+            bh_msg   = int(lm.font_lg * 2.2)
+            bx       = m
+            by       = self._h // 2 - bh_msg // 2
+            overlay  = pygame.Surface((bw, bh_msg), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            self._screen.blit(overlay, (bx, by))
+            pygame.draw.rect(self._screen, color, (bx, by, bw, bh_msg), 3, border_radius=10)
+            self._txt_fit(status, color, self._w // 2, by + bh_msg // 2,
+                          max_w=bw - 20, cx=True)
 
     def _get_gif_current_frame(self):
         """Retourne la frame courante du GIF animé et avance si nécessaire."""
