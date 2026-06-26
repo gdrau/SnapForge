@@ -338,7 +338,7 @@ class StateMachine:
                 self._session.processed_photos,
                 template_name,
                 self._session.final_path,
-                font_path=self._config.get("app.font_path"),
+                font_path=self._config.get("processing.font_path") or self._config.get("app.font_path"),
                 title=self._config.get("event.title", ""),
                 description=self._config.get("event.description", ""),
                 title_size=self._config.get("event.title_font_size"),

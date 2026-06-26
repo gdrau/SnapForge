@@ -12,7 +12,7 @@ app:
   width: 800
   height: 480
   fps: 30
-  font_path: assets/fonts/Roboto-Regular.ttf
+  font_path: assets/fonts/AmaticSC-Regular.ttf
 
 event:
   title: "Mon Événement"
@@ -64,6 +64,7 @@ processing:
   jpeg_quality: 97
   final_width: 1800
   final_height: 1200
+  font_path: assets/fonts/AmaticSC-Regular.ttf  # Police pour les textes sur la photo finale (titre/description)
 
 ai:
   enabled: false
