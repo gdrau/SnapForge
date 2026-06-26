@@ -129,11 +129,12 @@ python src/app.py --windowed
 
 | Étape | Action | Résultat attendu |
 |-------|--------|-----------------|
-| 1 | Accueil → "GIF ANIMÉ" | Preview caméra |
-| 2 | Cliquer "CAPTURER" | N captures automatiques avec délai |
-| 3 | Génération | Écran "Traitement GIF..." |
-| 4 | Résultat | QR code + aperçu GIF animé |
-| 5 | Accueil | GIF visible dans le carrousel (miniature animée) |
+| 1 | Accueil → "GIF ANIMÉ" | Écran choix d'orientation |
+| 2 | Cliquer "PORTRAIT" ou "PAYSAGE" | Preview caméra |
+| 3 | Cliquer "CAPTURER" | N captures automatiques avec délai |
+| 4 | Génération | Écran "Traitement GIF..." |
+| 5 | Résultat | QR code + aperçu GIF animé |
+| 6 | Accueil | GIF visible dans le carrousel (miniature animée) |
 
 ---
 
@@ -151,6 +152,11 @@ python src/app.py --windowed
 - Entrer dans **Configuration** → modifier les deux lignes de nom + taille police
 - Entrer dans **Export USB** → activer / désactiver le bouton USB
 - Sauvegarder → vérifier que `config.yaml` est mis à jour
+
+**Dialogues de confirmation à tester :**
+- **Quitter l'application** → dialogue avec boutons "Annuler" (gauche) et "Confirmer" (droite) : BTN1 GPIO = Annuler, BTN2 GPIO = Confirmer
+- **Remise à zéro** → même comportement : BTN1 GPIO = Annuler, BTN2 GPIO = Confirmer
+- Après reset : les anciennes photos doivent disparaître immédiatement du carrousel (cache mémoire vidé)
 
 ---
 
@@ -184,20 +190,53 @@ L'admin et l'écran QR code ne sont **pas** affectés par l'inactivité.
 
 ---
 
-## 7. Test police personnalisée
+## 7. Test polices personnalisées
 
 ```bash
-# Copier une police TTF (ex: Montserrat depuis Google Fonts)
-cp ~/Téléchargements/Montserrat-Regular.ttf assets/fonts/
+# Copier des polices TTF (ex: depuis Google Fonts)
+cp ~/Téléchargements/Roboto-Regular.ttf assets/fonts/
+cp ~/Téléchargements/AmaticSC-Bold.ttf assets/fonts/
 ```
+
+**Tester `app.font_path` (interface) :**
 
 Dans `config.yaml` :
 ```yaml
 app:
-  font_path: assets/fonts/Montserrat-Regular.ttf
+  font_path: assets/fonts/Roboto-Regular.ttf
 ```
 
-Relancer l'app → la police doit être visible sur l'écran d'accueil et sur les photos finales.
+Relancer l'app → la police doit être visible sur l'écran d'accueil, les menus et les boutons.
+
+**Tester `processing.font_path` (textes sur photo finale) :**
+
+Dans `config.yaml` :
+```yaml
+processing:
+  font_path: assets/fonts/AmaticSC-Bold.ttf
+```
+
+Relancer l'app, prendre une photo → le titre et la description sur l'image finale doivent utiliser AmaticSC-Bold.
+
+**Tester le fallback :** supprimer `processing.font_path` → les textes sur la photo finale doivent utiliser `app.font_path`.
+
+---
+
+## 7b. Test qualité photo (résolution max)
+
+```bash
+python scripts/test_quality_photo.py
+```
+
+**Résultat attendu :**
+```
+Résolution maximale : 3280 x 2464 px
+Capture 1/3  qualité=95  taille=~4200 Ko  netteté=XXX  durée=X.Xs
+Capture 2/3  qualité=85  taille=~3100 Ko  netteté=XXX  durée=X.Xs
+Capture 3/3  qualité=70  taille=~2000 Ko  netteté=XXX  durée=X.Xs
+```
+
+Le score de netteté est calculé via la variance du Laplacien — plus il est élevé, plus la mise au point est précise. Les fichiers sont sauvegardés dans `Photo/test_quality/`.
 
 ---
 

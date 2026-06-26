@@ -107,7 +107,8 @@ SnapForge/
 │   ├── test_gpio.py
 │   ├── test_camera.py
 │   ├── test_qr.py
-│   └── test_ai.py
+│   ├── test_ai.py
+│   └── test_quality_photo.py
 ├── config.example.yaml
 ├── snapforge.service           # Service systemd
 └── requirements.txt
@@ -120,8 +121,8 @@ SnapForge/
 ```
 IDLE → CHOOSE_TYPE → CHOOSE_FORMAT → PREVIEW → COUNTDOWN → CAPTURE
             ↓ (GIF)                                              ↓
-         PREVIEW → ... → GIF_PROCESSING → QR_DISPLAY → IDLE
-                         PROCESSING → REVIEW → PRINT_WAIT → QR_DISPLAY → IDLE
+   CHOOSE_GIF_ORIENTATION → PREVIEW → ... → GIF_PROCESSING → QR_DISPLAY → IDLE
+                                            PROCESSING → REVIEW → PRINT_WAIT → QR_DISPLAY → IDLE
 ```
 
 > Sans imprimante : PROCESSING → QR_DISPLAY directement (upload en arrière-plan).  
@@ -171,15 +172,23 @@ ADMINISTRATION
 
 ---
 
-## Police personnalisable
+## Polices personnalisables
 
-Dans `config.yaml` :
+Deux polices distinctes peuvent être configurées dans `config.yaml` :
+
 ```yaml
 app:
-  font_path: assets/fonts/Montserrat-Regular.ttf
+  font_path: assets/fonts/Roboto-Regular.ttf       # Interface / menus Pygame
+processing:
+  font_path: assets/fonts/AmaticSC-Bold.ttf        # Textes sur la photo finale (titre, description)
 ```
 
-Télécharger gratuitement sur [fonts.google.com](https://fonts.google.com) (format TTF), copier dans `assets/fonts/`. La même police s'applique à l'interface ET aux textes sur les photos finales.
+- `app.font_path` : police utilisée dans toute l'interface (écrans, menus, boutons).
+- `processing.font_path` : police gravée sur l'image finale (titre et description du template). Si absent, utilise `app.font_path` comme fallback.
+
+Les deux sont **optionnelles** — si aucune n'est définie, la police système DejaVuSans est utilisée.
+
+Télécharger gratuitement sur [fonts.google.com](https://fonts.google.com) (format TTF), copier dans `assets/fonts/`.
 
 ---
 

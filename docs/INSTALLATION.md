@@ -69,7 +69,7 @@ nano config.yaml
 app:
   booth_name: "Mon PhotoBooth"    # Nom affiché sur l'écran d'accueil
   fullscreen: true
-  font_path: assets/fonts/Montserrat-Regular.ttf  # Optionnel (voir section Police)
+  font_path: assets/fonts/Montserrat-Regular.ttf  # Optionnel (voir section Polices)
 
 event:
   title: "Mon Événement"
@@ -82,6 +82,10 @@ photos:
 camera:
   flip_horizontal: false          # Mettre true si image miroir
   flip_vertical: false
+  preview_width: 640              # Même ratio que le capteur (4:3)
+
+processing:
+  font_path: assets/fonts/AmaticSC-Bold.ttf        # Optionnel (voir section Polices)
 
 session:
   countdown_seconds: 3
@@ -96,18 +100,28 @@ templates:
 
 ---
 
-## 4. Police personnalisée (optionnel)
+## 4. Polices personnalisées (optionnel)
 
-Télécharger une police TTF sur [fonts.google.com](https://fonts.google.com) (ex: Montserrat, Raleway, Playfair Display).
+Deux polices TTF distinctes peuvent être configurées. Télécharger sur [fonts.google.com](https://fonts.google.com) (ex: Roboto, Montserrat, AmaticSC).
 
 ```bash
-# Copier la police dans le projet
-cp ~/Téléchargements/Montserrat-Regular.ttf assets/fonts/
-
-# Puis dans config.yaml :
-# app:
-#   font_path: assets/fonts/Montserrat-Regular.ttf
+# Copier les polices dans le projet
+cp ~/Téléchargements/Roboto-Regular.ttf assets/fonts/
+cp ~/Téléchargements/AmaticSC-Bold.ttf assets/fonts/
 ```
+
+Dans `config.yaml` :
+```yaml
+app:
+  font_path: assets/fonts/Roboto-Regular.ttf       # Police de l'interface et des menus
+processing:
+  font_path: assets/fonts/AmaticSC-Bold.ttf        # Police pour les textes sur la photo finale
+```
+
+- `app.font_path` : s'applique à toute l'interface Pygame (écrans, boutons, menus).
+- `processing.font_path` : s'applique au titre et à la description gravés sur l'image finale. Si absent, utilise `app.font_path` comme fallback.
+
+Les deux sont optionnelles — si aucune n'est définie, la police système DejaVuSans est utilisée.
 
 ---
 

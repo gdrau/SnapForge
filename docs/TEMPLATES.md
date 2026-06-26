@@ -118,6 +118,8 @@ Zones de texte **dynamiques** — le contenu vient du menu admin (ou de `config.
 
 Le texte est automatiquement tronqué s'il dépasse la largeur de la zone.
 
+> La police utilisée pour `title_zone` et `description_zone` est `processing.font_path` dans `config.yaml` (distinct de `app.font_path` qui s'applique à l'interface Pygame). Si `processing.font_path` est absent, la valeur de `app.font_path` est utilisée en fallback.
+
 ---
 
 ### `decorations`
@@ -172,6 +174,8 @@ templates:
 ```
 
 **Depuis le menu admin (ESC → Photos/Templates)** : les templates disponibles peuvent être assignés directement sans modifier le fichier YAML.
+
+> Pour le **GIF paysage**, le crop des frames utilise le ratio du canvas du template (`width/height`), pas les dimensions des slots individuels. Exemple : `landscape_4photos` a un canvas 2362×1575 (ratio 3:2 ≈ 1,5:1) — chaque frame GIF est recadrée à ce ratio avant animation.
 
 ---
 
