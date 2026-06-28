@@ -129,13 +129,16 @@ class CupsPrinter:
             if not accepting:
                 return False
 
-            # 2. lpstat -p : imprimante non désactivée / non en erreur ?
+            # 2. lpstat -p : imprimante non désactivée / non introuvable ?
             cmd_p = ["lpstat", "-p"]
             if self._printer_name:
                 cmd_p.append(self._printer_name)
             res_p = subprocess.run(cmd_p, capture_output=True, text=True, timeout=5)
             for line in res_p.stdout.splitlines():
                 ll = line.lower()
+                # "Unable to locate printer." n'a pas le nom → vérifier sans filtre
+                if "unable to locate" in ll or "connecting-to-device" in ll:
+                    return False
                 if target and target not in ll:
                     continue
                 if any(kw in ll for kw in ("disabled", "stopped", "offline", "not available")):
