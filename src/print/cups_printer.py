@@ -76,20 +76,25 @@ class CupsPrinter:
         except Exception:
             return True  # lpstat indisponible → considérer terminé
 
-    def is_last_print_success(self) -> bool:
+    def is_last_print_success(self, job_id: str = None) -> bool:
         """Vérifie que l'imprimante n'est pas entrée en état d'erreur après impression.
-        À appeler juste après que is_job_done() retourne True."""
+        À appeler juste après que is_job_done() retourne True.
+        job_id permet d'identifier le nom de l'imprimante si printer_name n'est pas configuré."""
         try:
-            cmd = ["lpstat", "-p"]
-            if self._printer_name:
-                cmd.append(self._printer_name)
+            printer = self._printer_name
+            if not printer and job_id:
+                match = re.match(r"^(.+)-\d+$", job_id)
+                if match:
+                    printer = match.group(1)
+            if not printer:
+                return False  # impossible d'identifier l'imprimante → échec conservateur
+            cmd = ["lpstat", "-p", printer]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if not result.stdout.strip():
                 return False  # imprimante introuvable = erreur
-            target = self._printer_name.lower()
             for line in result.stdout.splitlines():
                 ll = line.lower()
-                if target and target not in ll:
+                if printer.lower() not in ll:
                     continue
                 if any(kw in ll for kw in ("stopped", "error", "offline")):
                     return False

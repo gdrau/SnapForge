@@ -464,9 +464,9 @@ class PygameUI:
         self._info["smile"]     = False
         self._buttons = []
 
-    def show_smile(self):
-        """Affiche 'Souriez !' juste avant le déclenchement de la capture."""
-        self._info["countdown"] = 0
+    def show_smile(self, countdown: int = 0):
+        """Affiche 'Souriez !' (+ décompte optionnel entre captures GIF)."""
+        self._info["countdown"] = countdown
         self._info["smile"]     = True
         self._buttons = []
 
@@ -1544,13 +1544,16 @@ class PygameUI:
         total     = self._info.get("total", 0)
         self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
-        # Souriez / compte à rebours centré sur la boîte preview
-        box_cx = box_x + box_w // 2
-        box_cy = box_y + box_h // 2
+        # Souriez / compte à rebours — "Souriez !" en haut de la boîte, chiffre en-dessous
+        box_cx   = box_x + box_w // 2
+        box_cy   = box_y + box_h // 2
+        smile_y  = box_y + max(55, box_h // 8)
         cd    = self._info.get("countdown", 0)
         smile = self._info.get("smile", False)
         if smile:
-            self._shadow_txt("Souriez !", "xl", _ACCENT, box_cx, box_cy, cx=True)
+            self._shadow_txt("Souriez !", "xl", _ACCENT, box_cx, smile_y, cx=True)
+            if cd > 0:
+                self._shadow_txt(str(cd), "xxl", _WHITE, box_cx, smile_y + 80, cx=True)
         elif cd > 0:
             self._shadow_txt(str(cd), "xxl", _WHITE, box_cx, box_cy, cx=True)
 
