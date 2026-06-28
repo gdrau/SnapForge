@@ -92,6 +92,16 @@ print("Caméra prête")
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 pygame.display.set_caption("Test camera SnapForge — ESPACE=capture  Q=quitter")
+pygame.display.set_allow_screensaver(False)   # empêche pygame d'activer l'économiseur
+
+# Désactiver le blanking écran X11 (Pi OS desktop)
+import subprocess as _sp
+for _cmd in (["xset", "s", "off"], ["xset", "-dpms"], ["xset", "s", "noblank"]):
+    try:
+        _sp.run(_cmd, check=False, capture_output=True)
+    except Exception:
+        pass
+
 font_sm  = pygame.font.SysFont("monospace", 16)
 font_big = pygame.font.SysFont("monospace", 20, bold=True)
 clock    = pygame.time.Clock()
@@ -170,7 +180,7 @@ running = True
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
+            pass   # ignorer — fermeture uniquement via Q/ESC (évite l'arrêt par l'OS)
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_q, pygame.K_ESCAPE):
                 running = False

@@ -1148,6 +1148,8 @@ class PygameUI:
                     self.show_reset_confirm()
                 elif act == "admin_confirm_quit":
                     self.show_confirm_quit()
+                else:
+                    self._emit(act)
             elif itype == "back":
                 self._admin_go_back(settings)
             return True
@@ -1162,7 +1164,7 @@ class PygameUI:
     def _admin_focusable(items: list) -> list:
         """Indices des items navigables (exclut sep et gpio_info)."""
         return [i for i, it in enumerate(items)
-                if it.get("type") not in ("sep", "gpio_info")]
+                if it.get("type") not in ("sep", "gpio_info", "info")]
 
     def _admin_navigate_to(self, target: str, settings: dict):
         """Navigation FORWARD vers un sous-menu. Toujours reset à 0 (pas de restauration)."""
