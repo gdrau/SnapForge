@@ -383,7 +383,25 @@ class StateMachine:
         threading.Thread(target=self._do_print, daemon=True).start()
 
     def _do_print(self):
-        success = self._printer.print_photo(self._session.final_photo)
+        job_id = self._printer.print_photo(self._session.final_photo)
+
+        if job_id is None:
+            self._ui.show_print_result(False)
+            time.sleep(2)
+            self._go(State.QR_DISPLAY)
+            return
+
+        # Attente de fin réelle du job CUPS (max 120 s, poll toutes les 1,5 s)
+        max_wait   = 120
+        poll_every = 1.5
+        elapsed    = 0.0
+        while elapsed < max_wait:
+            if self._printer.is_job_done(job_id):
+                break
+            time.sleep(poll_every)
+            elapsed += poll_every
+
+        success = elapsed < max_wait
         self._ui.show_print_result(success)
         time.sleep(2)
         # Upload géré dans _enter_qr_display

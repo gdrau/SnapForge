@@ -1,4 +1,5 @@
 import logging
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -30,14 +31,15 @@ class CupsPrinter:
             logger.error(f"Erreur liste imprimantes: {e}")
             return []
 
-    def print_photo(self, photo_path: str) -> bool:
+    def print_photo(self, photo_path: str) -> Optional[str]:
+        """Soumet le job d'impression. Retourne le job_id CUPS (ex: 'HP_Printer-42') ou None."""
         if not self.enabled:
             logger.warning("Impression désactivée ou commande 'lp' introuvable")
-            return False
+            return None
 
         if not Path(photo_path).exists():
             logger.error(f"Photo introuvable : {photo_path}")
-            return False
+            return None
 
         cmd = ["lp", "-n", str(self._copies)]
         if self._printer_name:
@@ -49,13 +51,27 @@ class CupsPrinter:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
-                logger.info(f"Impression lancée : {photo_path}")
-                return True
+                # stdout : "request id is PrinterName-42 (1 file(s))"
+                match = re.search(r"request id is (\S+-\d+)", result.stdout)
+                job_id = match.group(1) if match else None
+                logger.info(f"Impression soumise : {photo_path} (job={job_id})")
+                return job_id
             logger.error(f"Erreur impression : {result.stderr}")
-            return False
+            return None
         except subprocess.TimeoutExpired:
-            logger.error("Timeout impression")
-            return False
+            logger.error("Timeout soumission impression")
+            return None
         except Exception as e:
             logger.error(f"Erreur impression: {e}")
-            return False
+            return None
+
+    def is_job_done(self, job_id: str) -> bool:
+        """Retourne True si le job n'est plus dans la queue active CUPS."""
+        try:
+            result = subprocess.run(
+                ["lpstat", "-o", job_id],
+                capture_output=True, text=True, timeout=5,
+            )
+            return not result.stdout.strip()
+        except Exception:
+            return True  # lpstat indisponible → considérer terminé
