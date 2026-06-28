@@ -96,62 +96,87 @@ class Composer:
                 logger.error("Aucun template disponible — composition automatique")
                 return self._compose_auto(photo_paths, output_path)
 
-        # Fond
-        canvas = self._make_background(template)
+        scale = float(self._config.get("processing.output_scale", 1.0))
+        out_w = int(template.width  * scale)
+        out_h = int(template.height * scale)
 
-        # Photos
+        # Fond
+        canvas = self._make_background(template, out_w, out_h)
+
+        # Photos — slots agrandis par scale : utilise plus de pixels sources
         for i, photo_path in enumerate(photo_paths):
             slot = template.slot(i)
             if not slot:
                 continue
             try:
+                sw = int(slot["width"]  * scale)
+                sh = int(slot["height"] * scale)
+                sx = int(slot["x"]      * scale)
+                sy = int(slot["y"]      * scale)
                 photo = Image.open(photo_path).convert("RGB")
-                photo = self._fit_crop(photo, slot["width"], slot["height"])
-                canvas.paste(photo, (slot["x"], slot["y"]))
+                photo = self._fit_crop(photo, sw, sh)
+                canvas.paste(photo, (sx, sy))
             except Exception as e:
                 logger.error(f"Erreur placement photo {photo_path}: {e}")
 
         if template.overlay_path:
-            self._apply_overlay(canvas, template.overlay_path, template.width, template.height)
+            self._apply_overlay(canvas, template.overlay_path, out_w, out_h)
 
         for dec in template.decorations:
-            self._draw_decoration(canvas, dec)
+            self._draw_decoration(canvas, self._scale_dict(dec, scale))
 
         if template.title_zone and title:
-            # Override la taille police si configurée (bornes 20-80)
             zone = dict(template.title_zone)
             if title_size is not None:
                 zone["size"] = max(20, min(200, int(title_size)))
-            self._draw_zone_text(canvas, zone, title, font_path)
+            self._draw_zone_text(canvas, self._scale_dict(zone, scale), title, font_path)
 
         if template.description_zone and description:
             zone = dict(template.description_zone)
             if description_size is not None:
                 zone["size"] = max(12, min(150, int(description_size)))
-            self._draw_zone_text(canvas, zone, description, font_path)
+            self._draw_zone_text(canvas, self._scale_dict(zone, scale), description, font_path)
 
         for elem in template.text_elements:
             try:
-                self._draw_text(canvas, elem, font_path)
+                self._draw_text(canvas, self._scale_dict(elem, scale), font_path)
             except Exception as e:
                 logger.error(f"Erreur texte template: {e}")
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        quality = self._config.get("processing.jpeg_quality", 92)
-        canvas.save(output_path, quality=quality)
-        logger.info(f"Image finale -> {output_path}")
+        quality = self._config.get("processing.jpeg_quality", 97)
+        output_dpi = int(self._config.get("processing.output_dpi", 0))
+        save_kwargs: dict = {"quality": quality}
+        if output_dpi > 0:
+            save_kwargs["dpi"] = (output_dpi, output_dpi)
+        canvas.save(output_path, **save_kwargs)
+        logger.info(f"Image finale -> {output_path}  ({out_w}×{out_h}px, scale={scale})")
         return output_path
 
     # ------------------------------------------------------------------
 
-    def _make_background(self, template: Template) -> Image.Image:
-        """Crée le canvas de fond selon la configuration du template."""
+    # clés numériques à multiplier par le facteur d'échelle
+    _SCALE_KEYS = frozenset({"x", "y", "width", "height", "size",
+                              "x1", "y1", "x2", "y2", "w", "h"})
+
+    def _scale_dict(self, d: dict, scale: float) -> dict:
+        """Retourne une copie du dict avec toutes les clés de coordonnées scalées."""
+        if scale == 1.0:
+            return d
+        result = dict(d)
+        for k in self._SCALE_KEYS:
+            if k in result and isinstance(result[k], (int, float)):
+                result[k] = int(result[k] * scale)
+        return result
+
+    def _make_background(self, template: Template, w: int, h: int) -> Image.Image:
+        """Crée le canvas de fond aux dimensions demandées."""
         if template.bg_type == "image" and template.bg_image_path:
             p = Path(template.bg_image_path)
             if p.exists():
                 try:
                     bg = Image.open(p).convert("RGB")
-                    bg = self._fit_crop(bg, template.width, template.height)
+                    bg = self._fit_crop(bg, w, h)
                     logger.debug(f"Fond image : {p}")
                     return bg
                 except Exception as e:
@@ -159,8 +184,7 @@ class Composer:
             else:
                 logger.warning(f"Fond image introuvable : {p.resolve()} — fallback couleur")
 
-        # Couleur de fond (fallback ou explicite)
-        return Image.new("RGB", (template.width, template.height), template.bg_fallback)
+        return Image.new("RGB", (w, h), template.bg_fallback)
 
     def _fit_crop(self, img: Image.Image, tw: int, th: int) -> Image.Image:
         src_r = img.width / img.height

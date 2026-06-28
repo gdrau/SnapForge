@@ -64,8 +64,10 @@ templates:
 
 processing:
   jpeg_quality: 97
-  final_width: 1800
-  final_height: 1200
+  output_scale: 1.5    # Facteur d'agrandissement du rendu final (1.0 = dimensions template, 1.5 ≈ 2400×3600, 2.0 = qualité max)
+  output_dpi: 300      # Métadonnée DPI inscrite dans le JPEG (0 = aucune, 300 = print-ready, 600 = haute qualité)
+  final_width: 1800    # Utilisé uniquement sans template (mode auto)
+  final_height: 1200   # Utilisé uniquement sans template (mode auto)
   font_path: assets/fonts/AmaticSC-Bold.ttf  # Police pour les textes sur la photo finale (titre/description)
 
 ai:
