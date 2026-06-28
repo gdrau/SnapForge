@@ -61,10 +61,12 @@ _INACTIVITY_STATES = frozenset({
 class Session:
 
     def __init__(self, layout_count: int, raw_dir: str, final_dir: str,
-                 is_gif_mode: bool = False, gif_orientation: str = "portrait"):
+                 is_gif_mode: bool = False, gif_orientation: str = "portrait",
+                 portrait_capture: bool = False):
         self.layout_count = layout_count
         self.is_gif_mode  = is_gif_mode
         self.gif_orientation  = gif_orientation   # "portrait" | "landscape"
+        self.portrait_capture = portrait_capture  # rotation 90° des brutes si caméra paysage
         self.timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_dir  = Path(raw_dir) / self.timestamp
         self.session_dir.mkdir(parents=True, exist_ok=True)
@@ -283,6 +285,8 @@ class StateMachine:
             if pre_delay > 0 and self._flash_enabled() and self._flash_mode() == "photo":
                 time.sleep(pre_delay)
             self._camera.capture(path)
+            if self._session.portrait_capture:
+                self._rotate_raw_photo(path)
             self._session.raw_photos.append(path)
             n = len(self._session.raw_photos)
             total = self._session.layout_count
@@ -894,10 +898,40 @@ class StateMachine:
         time.sleep(2.5)
         self._go(State.IDLE)
 
+    def _needs_portrait_capture(self, is_gif: bool, gif_orientation: str,
+                                layout_count: int) -> bool:
+        """True si la caméra est en paysage mais la session demande du portrait."""
+        cam_w = self._config.get("camera.resolution_width", 3280)
+        cam_h = self._config.get("camera.resolution_height", 2464)
+        if cam_w <= cam_h:
+            return False  # caméra déjà en portrait, pas de rotation nécessaire
+        if is_gif:
+            return gif_orientation == "portrait"
+        tpl_name = self._config.get(f"templates.photo_{layout_count}", "portrait_1photo")
+        ar = self._composer.template_ar(tpl_name)
+        if ar is not None:
+            return ar < 1.0
+        return "portrait" in tpl_name.lower()
+
+    def _rotate_raw_photo(self, path: str):
+        """Fait pivoter le JPEG brut de 90° pour le passer de paysage à portrait."""
+        from PIL import Image as _Image
+        angle = int(self._config.get("camera.portrait_rotation", 90))
+        try:
+            img = _Image.open(path)
+            img = img.rotate(angle, expand=True)
+            quality = int(self._config.get("processing.jpeg_quality", 97))
+            img.save(path, quality=quality)
+            logger.debug(f"Photo brute pivotée de {angle}° → portrait : {path}")
+        except Exception as e:
+            logger.error(f"Erreur rotation portrait : {e}")
+
     def _start_session(self, layout_count: int, is_gif: bool = False,
                        gif_orientation: str = "portrait"):
+        portrait = self._needs_portrait_capture(is_gif, gif_orientation, layout_count)
         self._session = Session(layout_count, self._raw_dir, self._final_dir,
-                                is_gif_mode=is_gif, gif_orientation=gif_orientation)
+                                is_gif_mode=is_gif, gif_orientation=gif_orientation,
+                                portrait_capture=portrait)
         self._go(State.PREVIEW)
 
     def _schedule_return(self, delay: float):

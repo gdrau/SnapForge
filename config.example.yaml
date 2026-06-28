@@ -40,6 +40,7 @@ camera:
   flip_horizontal: true
   flip_vertical: false
   sharpness: 1.5               # Netteté ISP libcamera (1.0 = défaut, 1.5-2.0 = plus net)
+  portrait_rotation: 90        # Angle de rotation (°) des brutes quand template portrait + caméra paysage (90 ou 270)
   flash_enabled: true          # Activer le flash pour les captures
   flash_mode: "photo"          # "photo" = flash par prise | "continu" = allumé depuis le décompte
 
