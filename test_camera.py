@@ -120,11 +120,13 @@ def _preview_loop():
             continue
         try:
             f = cam.capture_array()
-            if f is not None:
+            if f is not None and f.ndim == 3 and f.shape[2] == 3:
                 with _frame_lock:
                     _latest[0] = f
-        except Exception:
-            time.sleep(0.05)
+            time.sleep(1 / 30)   # limiter à 30 fps, évite de saturer picamera2
+        except Exception as e:
+            print(f"[preview] erreur: {e}")
+            time.sleep(0.1)
 
 threading.Thread(target=_preview_loop, daemon=True).start()
 
@@ -199,18 +201,21 @@ while running:
     screen.fill((15, 15, 15))
 
     if frame is not None:
-        surf = pygame.surfarray.make_surface(frame.transpose(1, 0, 2))
-        fw, fh = surf.get_size()
-        ratio = min(SCREEN_W / fw, (SCREEN_H - 44) / fh)
-        nw, nh = int(fw * ratio), int(fh * ratio)
-        surf  = pygame.transform.scale(surf, (nw, nh))
-        ox    = (SCREEN_W - nw) // 2
-        oy    = ((SCREEN_H - 44) - nh) // 2
-        screen.blit(surf, (ox, oy))
+        try:
+            surf = pygame.surfarray.make_surface(frame.transpose(1, 0, 2))
+            fw, fh = surf.get_size()
+            ratio = min(SCREEN_W / fw, (SCREEN_H - 44) / fh)
+            nw, nh = int(fw * ratio), int(fh * ratio)
+            surf  = pygame.transform.scale(surf, (nw, nh))
+            ox    = (SCREEN_W - nw) // 2
+            oy    = ((SCREEN_H - 44) - nh) // 2
+            screen.blit(surf, (ox, oy))
 
-        gs = pygame.Surface((nw, nh), pygame.SRCALPHA)
-        _draw_guides(gs, nw, nh)
-        screen.blit(gs, (ox, oy))
+            gs = pygame.Surface((nw, nh), pygame.SRCALPHA)
+            _draw_guides(gs, nw, nh)
+            screen.blit(gs, (ox, oy))
+        except Exception as e:
+            print(f"[display] erreur frame: {e}")
 
     # Bandeau bas
     pygame.draw.rect(screen, (30, 30, 30), (0, SCREEN_H - 44, SCREEN_W, 44))

@@ -81,21 +81,40 @@ class CupsPrinter:
         if not self.enabled:
             return False
         try:
-            result = subprocess.run(
-                ["lpstat", "-p"], capture_output=True, text=True, timeout=5
-            )
-            if result.returncode != 0 or not result.stdout.strip():
-                return False
             target = self._printer_name.lower()
-            for line in result.stdout.splitlines():
+
+            # 1. lpstat -a : imprimante accepte-t-elle de nouveaux jobs ?
+            cmd_a = ["lpstat", "-a"]
+            if self._printer_name:
+                cmd_a.append(self._printer_name)
+            res_a = subprocess.run(cmd_a, capture_output=True, text=True, timeout=5)
+            if res_a.returncode != 0 or not res_a.stdout.strip():
+                return False   # aucune imprimante configurée ou CUPS KO
+            accepting = False
+            for line in res_a.stdout.splitlines():
                 ll = line.lower()
                 if target and target not in ll:
                     continue
-                if "disabled" in ll or "not available" in ll:
+                if "not accepting" in ll:
+                    return False
+                if "accepting" in ll:
+                    accepting = True
+                    break
+            if not accepting:
+                return False
+
+            # 2. lpstat -p : imprimante non désactivée / non en erreur ?
+            cmd_p = ["lpstat", "-p"]
+            if self._printer_name:
+                cmd_p.append(self._printer_name)
+            res_p = subprocess.run(cmd_p, capture_output=True, text=True, timeout=5)
+            for line in res_p.stdout.splitlines():
+                ll = line.lower()
+                if target and target not in ll:
                     continue
-                if "idle" in ll or "processing" in ll or "enabled" in ll:
-                    return True
-            return False
+                if any(kw in ll for kw in ("disabled", "stopped", "offline", "not available")):
+                    return False
+            return True
         except Exception as e:
             logger.error(f"Erreur vérification imprimante : {e}")
             return False

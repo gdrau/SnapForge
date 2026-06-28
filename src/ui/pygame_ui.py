@@ -691,6 +691,11 @@ class PygameUI:
         items = self._admin_items(self._admin_page, settings)
         self._info["items"] = items
         self._rebuild_admin_buttons(items, settings)
+        # Si la sélection pointe sur un item non-focusable (ex: "info"),
+        # snap vers le premier focusable de la page
+        focusable = self._admin_focusable(items)
+        if focusable and self._admin_selection not in focusable:
+            self._admin_selection = focusable[0]
 
     def update_admin_settings(self, settings: dict):
         """Met à jour les settings et reconstruit la page admin courante (sans reset scroll)."""
