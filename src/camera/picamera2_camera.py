@@ -153,13 +153,19 @@ class Picamera2Camera:
             self._cam.configure(cfg)
             self._cam.start()
 
-            # Netteté ISP (1.0 = défaut libcamera, >1.0 = plus net)
-            sharpness = float(self._config.get("camera.sharpness", 1.5))
+            # Contrôles ISP post-démarrage
+            controls = {}
+            sharpness = float(self._config.get("camera.sharpness", 1.0))
             if sharpness != 1.0:
+                controls["Sharpness"] = sharpness
+            # NoiseReductionMode : 0=off 1=fast 2=highquality
+            nr_mode = int(self._config.get("camera.noise_reduction_mode", 2))
+            controls["NoiseReductionMode"] = nr_mode
+            if controls:
                 try:
-                    self._cam.set_controls({"Sharpness": sharpness})
+                    self._cam.set_controls(controls)
                 except Exception as e:
-                    logger.warning(f"Contrôle Sharpness non supporté : {e}")
+                    logger.warning(f"Contrôles ISP non supportés : {e}")
 
             time.sleep(2.0)  # Laisser le temps au pipeline ISP de stabiliser
 
