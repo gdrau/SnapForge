@@ -511,10 +511,10 @@ class PygameUI:
         self._buttons = []
         self._info["status"] = "Impression en cours..."
 
-    def show_print_result(self, success: bool):
+    def show_print_result(self, success: bool, msg: str = None):
         """Cache les boutons : le message résultat apparaît en premier plan."""
         self._buttons = []
-        self._info["status"] = "Imprimé !" if success else "Erreur d'impression"
+        self._info["status"] = msg if msg is not None else ("Imprimé !" if success else "Erreur d'impression")
 
     def show_qr(self, photo_path: str, qr_image, upload_url, gif_path: str = None):
         self._screen_name = "qr"
@@ -692,6 +692,11 @@ class PygameUI:
         self._info["items"] = items
         self._rebuild_admin_buttons(items, settings)
 
+    def update_admin_settings(self, settings: dict):
+        """Met à jour les settings et reconstruit la page admin courante (sans reset scroll)."""
+        self._info["settings"] = dict(settings)
+        self._build_admin(settings)
+
     def _admin_items(self, page: str, settings: dict) -> list:
         """Retourne la liste des items pour une page admin."""
         tpls = settings.get("_available_templates", [])
@@ -712,6 +717,8 @@ class PygameUI:
                  "desc": "Délai entre photos"},
                 {"type": "nav", "label": "Export USB",           "target": "usb",
                  "desc": "Copie des photos sur clé USB"},
+                {"type": "nav", "label": "Impression",           "target": "print",
+                 "desc": "File d'attente · Vider la file"},
                 {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
                  "desc": "Boutons · LEDs · Journal"},
                 {"type": "sep"},
@@ -808,6 +815,23 @@ class PygameUI:
                 {"type": "back"},
             ]
 
+        if page == "print":
+            jobs = settings.get("_print_jobs", [])
+            items: list = []
+            if jobs:
+                for job in jobs[:10]:
+                    items.append({"type": "info", "label": job})
+            else:
+                items.append({"type": "info", "label": "Aucune impression en attente"})
+            items += [
+                {"type": "sep"},
+                {"type": "action", "label": "Vider la file d'impression",
+                 "action": "admin_print_cancel_all", "color": _RED},
+                {"type": "sep"},
+                {"type": "back"},
+            ]
+            return items
+
         return [{"type": "back"}]
 
     @property
@@ -833,7 +857,7 @@ class PygameUI:
                 y += 12
                 continue
 
-            if itype in ("back", "gpio_info"):
+            if itype in ("back", "gpio_info", "info"):
                 y += ROW_H
                 continue
 
@@ -1899,6 +1923,11 @@ class PygameUI:
                 y += ROW_H
                 continue
 
+            if itype == "info":
+                self._txt(item.get("label", ""), "xs", _LGRAY, margin, cy - 1)
+                y += ROW_H
+                continue
+
             if itype in ("cycle", "toggle"):
                 self._txt(item.get("label", ""), "xs", _LGRAY, margin, cy - 1)
                 y += ROW_H
@@ -1967,6 +1996,7 @@ class PygameUI:
             "photos":  "PHOTOS / TEMPLATES",
             "general": "CONFIGURATION",
             "usb":     "EXPORT USB",
+            "print":   "IMPRESSION",
             "gpio":    "DIAGNOSTIC GPIO",
         }
         title = page_titles.get(self._admin_page, self._admin_page.upper())

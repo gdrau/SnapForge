@@ -75,3 +75,57 @@ class CupsPrinter:
             return not result.stdout.strip()
         except Exception:
             return True  # lpstat indisponible → considérer terminé
+
+    def is_printer_online(self) -> bool:
+        """Vérifie qu'une imprimante est disponible et accepte les jobs."""
+        if not self.enabled:
+            return False
+        try:
+            result = subprocess.run(
+                ["lpstat", "-p"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return False
+            target = self._printer_name.lower()
+            for line in result.stdout.splitlines():
+                ll = line.lower()
+                if target and target not in ll:
+                    continue
+                if "disabled" in ll or "not available" in ll:
+                    continue
+                if "idle" in ll or "processing" in ll or "enabled" in ll:
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Erreur vérification imprimante : {e}")
+            return False
+
+    def get_pending_jobs(self) -> List[str]:
+        """Retourne la liste des IDs de jobs en attente."""
+        try:
+            cmd = ["lpstat", "-o"]
+            if self._printer_name:
+                cmd.append(self._printer_name)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            jobs = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line:
+                    jobs.append(line.split()[0])
+            return jobs
+        except Exception as e:
+            logger.error(f"Erreur liste jobs : {e}")
+            return []
+
+    def cancel_all_jobs(self) -> bool:
+        """Annule tous les jobs en attente. Retourne True si succès."""
+        try:
+            cmd = ["cancel", "-a"]
+            if self._printer_name:
+                cmd.append(self._printer_name)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            logger.info(f"File d'impression vidée (code={result.returncode})")
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"Erreur annulation jobs : {e}")
+            return False

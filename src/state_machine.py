@@ -387,6 +387,13 @@ class StateMachine:
         threading.Thread(target=self._do_print, daemon=True).start()
 
     def _do_print(self):
+        # 1. Vérifier que l'imprimante est en ligne avant de soumettre
+        if not self._printer.is_printer_online():
+            self._ui.show_print_result(False, "Aucune imprimante connectée")
+            time.sleep(2)
+            self._go(State.QR_DISPLAY)
+            return
+
         job_id = self._printer.print_photo(self._session.final_photo)
 
         if job_id is None:
@@ -395,7 +402,7 @@ class StateMachine:
             self._go(State.QR_DISPLAY)
             return
 
-        # Attente de fin réelle du job CUPS (max 120 s, poll toutes les 1,5 s)
+        # 2. Attente de fin réelle du job CUPS (max 120 s, poll toutes les 1,5 s)
         max_wait   = 120
         poll_every = 1.5
         elapsed    = 0.0
@@ -580,6 +587,8 @@ class StateMachine:
             # Flash
             "flash_enabled": bool(self._config.get("camera.flash_enabled", True)),
             "flash_mode":    str(self._config.get("camera.flash_mode", "photo")),
+            # Impression
+            "_print_jobs": self._printer.get_pending_jobs() if self._printer.enabled else [],
             # Metadata UI
             "_available_templates": tpl_names,
             "_gpio_log":       list(self._gpio_log),
@@ -797,6 +806,13 @@ class StateMachine:
         if action == "admin_cancel":
             if self._state == State.ADMIN:
                 self._go(State.IDLE)
+            return
+
+        if action == "admin_print_cancel_all":
+            if self._state == State.ADMIN:
+                self._printer.cancel_all_jobs()
+                settings = self._build_admin_settings()
+                self._ui.update_admin_settings(settings)
             return
 
         if action == "start_session":
