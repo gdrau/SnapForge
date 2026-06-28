@@ -1544,20 +1544,18 @@ class PygameUI:
         total     = self._info.get("total", 0)
         self._shadow_txt(f"{total - remaining}/{total}", "sm", _WHITE, 14, 14)
 
-        # Souriez / compte à rebours
+        # Souriez / compte à rebours — jamais les deux en même temps
         box_cx  = box_x + box_w // 2
         box_cy  = box_y + box_h // 2
         cd    = self._info.get("countdown", 0)
         smile = self._info.get("smile", False)
         if cd > 0:
-            # Chiffre au centre (position identique au 1er décompte)
+            # Chiffre au centre (identique pour 1 photo, 4 photos et GIF)
             self._shadow_txt(str(cd), "xxl", _WHITE, box_cx, box_cy, cx=True)
-            if smile:
-                # "Souriez !" en haut de la boîte, séparé du chiffre
-                smile_y = box_y + max(36, box_h // 10)
-                self._shadow_txt("Souriez !", "lg", _ACCENT, box_cx, smile_y, cx=True)
         elif smile:
-            self._shadow_txt("Souriez !", "xl", _ACCENT, box_cx, box_cy, cx=True)
+            # "Souriez !" en haut de la boîte quand décompte terminé
+            smile_y = box_y + max(40, box_h // 8)
+            self._shadow_txt("Souriez !", "xl", _ACCENT, box_cx, smile_y, cx=True)
 
     def _r_processing(self):
         self._screen.fill(_DARK)

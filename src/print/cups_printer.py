@@ -137,7 +137,7 @@ class CupsPrinter:
             for line in res_p.stdout.splitlines():
                 ll = line.lower()
                 # "Unable to locate printer." n'a pas le nom → vérifier sans filtre
-                if "unable to locate" in ll or "connecting-to-device" in ll:
+                if "unable to locate" in ll:
                     return False
                 if target and target not in ll:
                     continue

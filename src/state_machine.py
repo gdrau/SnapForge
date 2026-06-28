@@ -303,10 +303,17 @@ class StateMachine:
                     self._go(State.PROCESSING)
             else:
                 if self._session.is_gif_mode:
-                    # Délai configurable entre captures GIF, "Souriez !" visible avant le flash
                     delay = float(self._config.get("gif.delay_between_frames_seconds", 1.0))
+                    if delay >= 1.0:
+                        # Décompte chiffres puis "Souriez !" — même logique que _run_countdown()
+                        for i in range(int(delay), 0, -1):
+                            self._ui.show_countdown(i)
+                            time.sleep(1.0)
+                        frac = delay - int(delay)
+                        if frac > 0.05:
+                            time.sleep(frac)
                     self._ui.show_smile()
-                    time.sleep(delay)
+                    time.sleep(0.5)
                     self._go(State.CAPTURE)
                 else:
                     time.sleep(0.8)
@@ -415,7 +422,7 @@ class StateMachine:
         # Un job peut disparaître de la queue par succès OU par erreur (abort).
         # Vérifier l'état de l'imprimante pour distinguer les deux cas.
         if elapsed < max_wait:
-            success = self._printer.is_last_print_success()
+            success = self._printer.is_last_print_success(job_id)
         else:
             success = False
         self._ui.show_print_result(success)
