@@ -196,24 +196,40 @@ class Composer:
             draw.rectangle([(dec["x"], dec["y"]), (dec["x"] + dec["w"], dec["y"] + dec["h"])], fill=color)
 
     def _draw_zone_text(self, canvas, zone: dict, text: str, font_path: Optional[str]):
-        draw = ImageDraw.Draw(canvas)
         zx, zy, zw, zh = zone["x"], zone["y"], zone["width"], zone["height"]
         size = zone.get("size", 32)
         color = tuple(zone.get("color", [0, 0, 0]))
         font = self._load_font(font_path, size)
+        direction = zone.get("text_direction", "horizontal")
 
-        # Tronquer si trop long
-        display = text
-        while font.getlength(display) > zw - 20 and len(display) > 3:
-            display = display[:-1]
-
-        tw = int(font.getlength(display))
-        bbox = font.getbbox(display)
-        th = bbox[3] - bbox[1]
-        align = zone.get("align", "center")
-        tx = zx + (zw - tw) // 2 if align == "center" else (zx + zw - tw - 10 if align == "right" else zx + 10)
-        ty = zy + (zh - th) // 2
-        draw.text((tx, ty), display, fill=color, font=font)
+        if direction in ("vertical-up", "vertical-down"):
+            # Rendu horizontal sur surface temporaire (zh × zw), puis rotation
+            display = text
+            while font.getlength(display) > zh - 20 and len(display) > 3:
+                display = display[:-1]
+            tw = int(font.getlength(display))
+            bbox = font.getbbox(display)
+            th = bbox[3] - bbox[1]
+            tmp = Image.new("RGBA", (zh, zw), (0, 0, 0, 0))
+            ImageDraw.Draw(tmp).text(
+                ((zh - tw) // 2, (zw - th) // 2),
+                display, fill=color, font=font,
+            )
+            angle = 90 if direction == "vertical-up" else 270
+            rotated = tmp.rotate(angle, expand=True)
+            canvas.paste(rotated.convert("RGB"), (zx, zy), rotated.split()[3])
+        else:
+            draw = ImageDraw.Draw(canvas)
+            display = text
+            while font.getlength(display) > zw - 20 and len(display) > 3:
+                display = display[:-1]
+            tw = int(font.getlength(display))
+            bbox = font.getbbox(display)
+            th = bbox[3] - bbox[1]
+            align = zone.get("align", "center")
+            tx = zx + (zw - tw) // 2 if align == "center" else (zx + zw - tw - 10 if align == "right" else zx + 10)
+            ty = zy + (zh - th) // 2
+            draw.text((tx, ty), display, fill=color, font=font)
 
     def _draw_text(self, canvas, elem: dict, font_path: Optional[str]):
         draw = ImageDraw.Draw(canvas)
