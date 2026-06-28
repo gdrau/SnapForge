@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,12 @@ class Composer:
         # Fond
         canvas = self._make_background(template, out_w, out_h)
 
+        # Unsharp Mask après resize (radius, percent, threshold)
+        usm_radius    = float(self._config.get("processing.usm_radius",    1.0))
+        usm_percent   = int(self._config.get("processing.usm_percent",   150))
+        usm_threshold = int(self._config.get("processing.usm_threshold",   3))
+        usm_enabled   = bool(self._config.get("processing.usm_enabled",  True))
+
         # Photos — slots agrandis par scale : utilise plus de pixels sources
         for i, photo_path in enumerate(photo_paths):
             slot = template.slot(i)
@@ -115,6 +121,10 @@ class Composer:
                 sy = int(slot["y"]      * scale)
                 photo = Image.open(photo_path).convert("RGB")
                 photo = self._fit_crop(photo, sw, sh)
+                if usm_enabled:
+                    photo = photo.filter(ImageFilter.UnsharpMask(
+                        radius=usm_radius, percent=usm_percent, threshold=usm_threshold
+                    ))
                 canvas.paste(photo, (sx, sy))
             except Exception as e:
                 logger.error(f"Erreur placement photo {photo_path}: {e}")

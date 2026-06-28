@@ -152,6 +152,15 @@ class Picamera2Camera:
             )
             self._cam.configure(cfg)
             self._cam.start()
+
+            # Netteté ISP (1.0 = défaut libcamera, >1.0 = plus net)
+            sharpness = float(self._config.get("camera.sharpness", 1.5))
+            if sharpness != 1.0:
+                try:
+                    self._cam.set_controls({"Sharpness": sharpness})
+                except Exception as e:
+                    logger.warning(f"Contrôle Sharpness non supporté : {e}")
+
             time.sleep(2.0)  # Laisser le temps au pipeline ISP de stabiliser
 
             # Vérification : une frame doit arriver dans les 2 secondes suivantes

@@ -39,6 +39,7 @@ camera:
   rotation: 0
   flip_horizontal: true
   flip_vertical: false
+  sharpness: 1.5               # Netteté ISP libcamera (1.0 = défaut, 1.5-2.0 = plus net)
   flash_enabled: true          # Activer le flash pour les captures
   flash_mode: "photo"          # "photo" = flash par prise | "continu" = allumé depuis le décompte
 
@@ -66,6 +67,10 @@ processing:
   jpeg_quality: 97
   output_scale: 1.5    # Facteur d'agrandissement du rendu final (1.0 = dimensions template, 1.5 ≈ 2400×3600, 2.0 = qualité max)
   output_dpi: 300      # Métadonnée DPI inscrite dans le JPEG (0 = aucune, 300 = print-ready, 600 = haute qualité)
+  usm_enabled: true    # Unsharp Mask après redimensionnement (restaure la netteté perdue au resize)
+  usm_radius: 1.0      # Rayon USM en pixels (0.5-2.0)
+  usm_percent: 150     # Intensité USM en % (100-200)
+  usm_threshold: 3     # Seuil USM — ignore les zones uniformes (1-10)
   final_width: 1800    # Utilisé uniquement sans template (mode auto)
   final_height: 1200   # Utilisé uniquement sans template (mode auto)
   font_path: assets/fonts/AmaticSC-Bold.ttf  # Police pour les textes sur la photo finale (titre/description)
