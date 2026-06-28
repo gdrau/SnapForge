@@ -155,12 +155,29 @@ class Picamera2Camera:
 
             # Contrôles ISP post-démarrage
             controls = {}
+            # Netteté
             sharpness = float(self._config.get("camera.sharpness", 1.0))
             if sharpness != 1.0:
                 controls["Sharpness"] = sharpness
-            # NoiseReductionMode : 0=off 1=fast 2=highquality
-            nr_mode = int(self._config.get("camera.noise_reduction_mode", 2))
+            # Débruitage : 0=désactivé 1=rapide 2=haute qualité
+            nr_mode = int(self._config.get("camera.noise_reduction_mode", 1))
             controls["NoiseReductionMode"] = nr_mode
+            # Contraste
+            contrast = float(self._config.get("camera.contrast", 1.0))
+            if contrast != 1.0:
+                controls["Contrast"] = contrast
+            # Saturation
+            saturation = float(self._config.get("camera.saturation", 1.0))
+            if saturation != 1.0:
+                controls["Saturation"] = saturation
+            # Luminosité
+            brightness = float(self._config.get("camera.brightness", 0.0))
+            if brightness != 0.0:
+                controls["Brightness"] = brightness
+            # Compensation d'exposition (EV)
+            ev = float(self._config.get("camera.exposure_value", 0.0))
+            if ev != 0.0:
+                controls["ExposureValue"] = ev
             if controls:
                 try:
                     self._cam.set_controls(controls)
@@ -220,9 +237,35 @@ class Picamera2Camera:
         if not self._cam:
             raise RuntimeError("Caméra non initialisée")
 
-        # Arrêter la boucle preview AVANT la capture pour éviter la race condition
-        # (la boucle appelle capture_array() pendant que switch_mode change la config
-        #  → corrompt le pipeline ISP après plusieurs sessions)
+        ae_lock  = bool(self._config.get("camera.ae_lock_before_capture", False))
+        ae_delay = float(self._config.get("camera.ae_lock_delay", 0.2))
+        _ae_was_locked = False
+
+        # 1. Verrouiller AE/AWB PENDANT que la preview tourne encore
+        #    (capture_metadata() donne les réglages auto actuels du pipeline ISP)
+        if ae_lock:
+            try:
+                meta = self._cam.capture_metadata()
+                lock = {"AeEnable": False, "AwbEnable": False}
+                et = meta.get("ExposureTime")
+                ag = meta.get("AnalogueGain")
+                cg = meta.get("ColourGains")
+                if et:
+                    lock["ExposureTime"] = int(et)
+                if ag:
+                    lock["AnalogueGain"] = float(ag)
+                if cg and len(cg) >= 2:
+                    lock["ColourGains"] = (float(cg[0]), float(cg[1]))
+                self._cam.set_controls(lock)
+                time.sleep(ae_delay)   # laisser l'ISP appliquer les valeurs
+                _ae_was_locked = True
+                logger.debug(f"AE/AWB verrouillés — ET={et}µs  AG={ag:.2f}  WB={cg}")
+            except Exception as e:
+                logger.warning(f"AE/AWB lock non bloquant : {e}")
+
+        # 2. Arrêter la boucle preview AVANT la capture pour éviter la race condition
+        #    (la boucle appelle capture_array() pendant que switch_mode change la config
+        #     → corrompt le pipeline ISP après plusieurs sessions)
         was_running = self._running
         self._running = False
         if self._thread and self._thread.is_alive():
@@ -233,8 +276,6 @@ class Picamera2Camera:
         ch = self._config.get("camera.resolution_height", 2464)
 
         try:
-            # switch_mode_and_capture_file gère le mode switching en interne.
-            # Le preview loop étant arrêté, il n'y a plus de race condition.
             still_kwargs = {"transform": self._transform} if self._transform else {}
             still_cfg = self._cam.create_still_configuration(
                 main={"size": (cw, ch), "format": "RGB888"},
@@ -247,6 +288,12 @@ class Picamera2Camera:
             raise
 
         finally:
+            # 3. Réactiver AE/AWB pour le retour en preview
+            if _ae_was_locked:
+                try:
+                    self._cam.set_controls({"AeEnable": True, "AwbEnable": True})
+                except Exception:
+                    pass
             # Toujours redémarrer la boucle preview (même en cas d'erreur)
             if was_running and self._callback:
                 self._running = True

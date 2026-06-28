@@ -412,7 +412,12 @@ class StateMachine:
             time.sleep(poll_every)
             elapsed += poll_every
 
-        success = elapsed < max_wait
+        # Un job peut disparaître de la queue par succès OU par erreur (abort).
+        # Vérifier l'état de l'imprimante pour distinguer les deux cas.
+        if elapsed < max_wait:
+            success = self._printer.is_last_print_success()
+        else:
+            success = False
         self._ui.show_print_result(success)
         time.sleep(2)
         # Upload géré dans _enter_qr_display

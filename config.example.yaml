@@ -39,8 +39,19 @@ camera:
   rotation: 0
   flip_horizontal: true
   flip_vertical: false
-  sharpness: 1.0               # Netteté ISP libcamera (1.0 = défaut, 1.5-2.0 = plus net — augmente aussi le grain)
+  # --- ISP qualité image ---
+  sharpness: 1.0               # Netteté    (0.0-16.0, 1.0 = défaut)
+  contrast: 1.0                # Contraste  (0.5-2.0,  1.0 = défaut)
+  saturation: 1.0              # Saturation (0.0-2.0,  1.0 = défaut)
+  brightness: 0.0              # Luminosité (-1.0 à 1.0, 0.0 = neutre)
+  exposure_value: 0.0          # Compensation EV (-4.0 à 4.0, 0.0 = aucune)
   noise_reduction_mode: 1      # Débruitage ISP : 0=désactivé 1=rapide 2=haute qualité
+  # --- Verrouillage AE/AWB avant capture ---
+  ae_lock_before_capture: false # true = récupère expo+balance des blancs de la preview
+                                # Recommandé si flash continu (lumière stable pendant preview)
+                                # Désactiver si flash photo (flash absent en preview → surexposition)
+  ae_lock_delay: 0.2           # Délai (s) après verrouillage (l'ISP applique les valeurs)
+  # --- Rotation portrait ---
   portrait_rotation: 0         # Angle de rotation (°) des brutes quand template portrait + caméra paysage (90 ou 270)
   flash_enabled: true          # Activer le flash pour les captures
   flash_mode: "continu"        # "photo" = flash par prise | "continu" = allumé depuis le décompte
