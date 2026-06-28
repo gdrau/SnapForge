@@ -135,23 +135,22 @@ class Picamera2Camera:
             cw = self._config.get("camera.resolution_width", 3280)
             ch = self._config.get("camera.resolution_height", 2464)
 
+            flip_h = int(self._config.get("camera.flip_horizontal", False))
+            flip_v = int(self._config.get("camera.flip_vertical", False))
+            self._transform = None
+            if flip_h or flip_v:
+                import libcamera
+                self._transform = libcamera.Transform(hflip=flip_h, vflip=flip_v)
+
             # Config preview avec flux RAW à la résolution native du capteur.
-            # Cette config est celle qui fonctionnait avant : l'AE/AWB utilise le
-            # flux RAW pour calculer l'exposition correcte en preview.
+            # L'AE/AWB utilise le flux RAW pour calculer l'exposition correcte.
+            cfg_kwargs = {"transform": self._transform} if self._transform else {}
             cfg = self._cam.create_preview_configuration(
                 main={"size": (pw, ph), "format": "RGB888"},
                 raw={"size": (cw, ch)},
+                **cfg_kwargs
             )
             self._cam.configure(cfg)
-
-            flip_h = int(self._config.get("camera.flip_horizontal", False))
-            flip_v = int(self._config.get("camera.flip_vertical", False))
-            if flip_h or flip_v:
-                import libcamera
-                self._cam.camera_configuration()["transform"] = libcamera.Transform(
-                    hflip=flip_h, vflip=flip_v
-                )
-
             self._cam.start()
             time.sleep(2.0)  # Laisser le temps au pipeline ISP de stabiliser
 
@@ -221,8 +220,10 @@ class Picamera2Camera:
         try:
             # switch_mode_and_capture_file gère le mode switching en interne.
             # Le preview loop étant arrêté, il n'y a plus de race condition.
+            still_kwargs = {"transform": self._transform} if self._transform else {}
             still_cfg = self._cam.create_still_configuration(
                 main={"size": (cw, ch), "format": "RGB888"},
+                **still_kwargs
             )
             self._cam.switch_mode_and_capture_file(still_cfg, output_path)
 
