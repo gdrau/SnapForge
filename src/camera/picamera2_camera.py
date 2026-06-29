@@ -241,27 +241,33 @@ class Picamera2Camera:
         ae_delay = float(self._config.get("camera.ae_lock_delay", 0.2))
         _ae_was_locked = False
 
-        # 1. Verrouiller AE/AWB PENDANT que la preview tourne encore
-        #    (capture_metadata() donne les réglages auto actuels du pipeline ISP)
-        if ae_lock:
-            try:
-                meta = self._cam.capture_metadata()
-                lock = {"AeEnable": False, "AwbEnable": False}
+        # 1. Transfert AE/AWB preview → mode still PENDANT que la preview tourne encore.
+        #    Sans ce transfert, l'ISP repart de zéro sur la première capture still
+        #    et la balance des blancs n'a pas le temps de converger (dérive couleur).
+        #    - Toujours : ColourGains fixés (AwbEnable=False) pour transférer la WB preview
+        #    - Si ae_lock=True en plus : ExposureTime + AnalogueGain fixés (AeEnable=False)
+        try:
+            meta = self._cam.capture_metadata()
+            ctrl = {}
+            cg = meta.get("ColourGains")
+            if cg and len(cg) >= 2:
+                ctrl["AwbEnable"]   = False
+                ctrl["ColourGains"] = (float(cg[0]), float(cg[1]))
+            if ae_lock:
                 et = meta.get("ExposureTime")
                 ag = meta.get("AnalogueGain")
-                cg = meta.get("ColourGains")
+                ctrl["AeEnable"] = False
                 if et:
-                    lock["ExposureTime"] = int(et)
+                    ctrl["ExposureTime"] = int(et)
                 if ag:
-                    lock["AnalogueGain"] = float(ag)
-                if cg and len(cg) >= 2:
-                    lock["ColourGains"] = (float(cg[0]), float(cg[1]))
-                self._cam.set_controls(lock)
-                time.sleep(ae_delay)   # laisser l'ISP appliquer les valeurs
+                    ctrl["AnalogueGain"] = float(ag)
+            if ctrl:
+                self._cam.set_controls(ctrl)
+                time.sleep(ae_delay if ae_lock else 0.05)
                 _ae_was_locked = True
-                logger.debug(f"AE/AWB verrouillés — ET={et}µs  AG={ag:.2f}  WB={cg}")
-            except Exception as e:
-                logger.warning(f"AE/AWB lock non bloquant : {e}")
+                logger.debug(f"ISP amorcé — WB={cg}  ae_lock={ae_lock}")
+        except Exception as e:
+            logger.warning(f"Amorçage ISP non bloquant : {e}")
 
         # 2. Arrêter la boucle preview AVANT la capture pour éviter la race condition
         #    (la boucle appelle capture_array() pendant que switch_mode change la config
