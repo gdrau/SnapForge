@@ -592,6 +592,7 @@ class StateMachine:
             "carousel_enabled":  self._config.get("home_carousel.enabled", True),
             "carousel_mode":     self._config.get("home_carousel.mode", "table"),
             "carousel_interval": int(self._config.get("home_carousel.interval_seconds", 4)),
+            "carousel_max_photos": int(self._config.get("home_carousel.max_photos_displayed", 5)),
             # GIF animé
             "gif_delay_s":   float(self._config.get("gif.delay_between_frames_seconds", 1.0)),
             # Export USB
@@ -648,6 +649,7 @@ class StateMachine:
             "home_carousel.enabled":       bool(settings.get("carousel_enabled", True)),
             "home_carousel.mode":          settings.get("carousel_mode", "table"),
             "home_carousel.interval_seconds": int(settings.get("carousel_interval", 4)),
+            "home_carousel.max_photos_displayed": int(settings.get("carousel_max_photos", 5)),
             "usb_export.enabled":             bool(settings.get("usb_enabled", False)),
             "gif.delay_between_frames_seconds": float(settings.get("gif_delay_s", 1.0)),
             "camera.flash_enabled":           bool(settings.get("flash_enabled", True)),

@@ -747,6 +747,9 @@ class PygameUI:
                 {"type": "cycle",  "label": "Intervalle (sec)",       "key": "carousel_interval",
                  "values": [2, 3, 4, 6, 10],
                  "fmt": lambda v: f"{v} sec"},
+                {"type": "cycle",  "label": "Photos max carrousel",  "key": "carousel_max_photos",
+                 "values": [1, 2, 3, 4, 5, 6, 8, 10],
+                 "fmt": lambda v: f"{v} photo{'s' if v > 1 else ''}"},
                 {"type": "sep"},
                 {"type": "back"},
             ]
