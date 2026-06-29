@@ -1,3 +1,4 @@
+import glob as _glob
 import logging
 import re
 import shutil
@@ -94,6 +95,8 @@ class CupsPrinter:
                 return False  # imprimante introuvable = erreur
             for line in result.stdout.splitlines():
                 ll = line.lower()
+                if "unable to locate" in ll:
+                    return False
                 if printer.lower() not in ll:
                     continue
                 if any(kw in ll for kw in ("stopped", "error", "offline")):
@@ -143,6 +146,26 @@ class CupsPrinter:
                     continue
                 if any(kw in ll for kw in ("disabled", "stopped", "offline", "not available")):
                     return False
+
+            # 3. Pour les imprimantes USB : vérifier que le périphérique existe réellement.
+            #    CUPS peut afficher "idle" même quand l'imprimante est débranchée s'il
+            #    n'y a pas de job bloqué — on détecte cela via lpstat -v (URI usb://).
+            try:
+                cmd_v = ["lpstat", "-v"]
+                if self._printer_name:
+                    cmd_v.append(self._printer_name)
+                res_v = subprocess.run(cmd_v, capture_output=True, text=True, timeout=5)
+                for line in res_v.stdout.splitlines():
+                    ll = line.lower()
+                    if target and target not in ll:
+                        continue
+                    if "usb://" in ll or "/dev/usb" in ll:
+                        if not _glob.glob("/dev/usb/lp*"):
+                            return False
+                        break
+            except Exception:
+                pass  # lpstat -v optionnel — ne pas bloquer si erreur
+
             return True
         except Exception as e:
             logger.error(f"Erreur vérification imprimante : {e}")

@@ -38,7 +38,8 @@ class _Btn:
     fixed = False   # True = position absolue, non affectée par le scroll admin
 
     def __init__(self, rect, text, color, text_color=_WHITE, font=None,
-                 action=None, data=None, radius=10, no_draw=False, selected=False):
+                 action=None, data=None, radius=10, no_draw=False, selected=False,
+                 fixed_color=False):
         self.rect     = pygame.Rect(rect)
         self.text     = text
         self.color    = color
@@ -49,6 +50,7 @@ class _Btn:
         self.radius   = radius
         self.no_draw  = no_draw
         self.selected = selected   # True = sélectionné par le clavier
+        self.fixed_color = fixed_color  # True = couleur fixe, sélection visible via bordure seulement
         self._hover   = False
 
     def draw(self, surf):
@@ -56,7 +58,7 @@ class _Btn:
             return
         if self._hover:
             c = tuple(min(v + 25, 255) for v in self.color)
-        elif self.selected:
+        elif self.selected and not self.fixed_color:
             # Fond plus lumineux quand sélectionné au clavier
             c = tuple(min(v + 60, 255) for v in self.color)
         else:
@@ -880,11 +882,11 @@ class PygameUI:
                 continue
 
             if itype == "action":
-                # Pleine largeur — sélection visible via couleur+bordure blanche
+                # Pleine largeur — sélection visible via bordure blanche uniquement (couleur fixe)
                 btns.append(_Btn(
                     (margin, y, panel_w, ROW_H - 4), item["label"], item["color"],
                     font=self._fonts["sm"], action=item["action"], data=None, radius=8,
-                    selected=is_sel,
+                    selected=is_sel, fixed_color=True,
                 ))
                 y += ROW_H
                 continue
