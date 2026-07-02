@@ -726,6 +726,8 @@ class PygameUI:
                  "desc": "Copie des photos sur clé USB"},
                 {"type": "nav", "label": "Impression",           "target": "print",
                  "desc": "File d'attente · Vider la file"},
+                {"type": "nav", "label": "Réseau WiFi",          "target": "wifi",
+                 "desc": "Connexion · Scan · Mot de passe"},
                 {"type": "nav", "label": "Diagnostic GPIO",     "target": "gpio",
                  "desc": "Boutons · LEDs · Journal"},
                 {"type": "sep"},
@@ -824,6 +826,35 @@ class PygameUI:
                 {"type": "sep"},
                 {"type": "back"},
             ]
+
+        if page == "wifi":
+            networks = settings.get("wifi_networks", [])
+            status   = settings.get("wifi_status", "")
+            current  = settings.get("_wifi_current_ssid", "")
+            ip       = settings.get("_wifi_ip", "")
+            conn_info = (f"Connecté : {current}" if current else "Non connecté")
+            if ip and ip != "---":
+                conn_info += f"   IP : {ip}"
+            items: list = [
+                {"type": "info", "label": conn_info},
+                {"type": "sep"},
+                {"type": "action", "label": "Rechercher les réseaux",
+                 "action": "admin_wifi_scan", "color": _BLUE},
+            ]
+            if networks:
+                items += [
+                    {"type": "sep"},
+                    {"type": "cycle", "label": "Réseau", "key": "wifi_ssid",
+                     "values": networks, "fmt": lambda v: v},
+                    {"type": "text", "label": "Mot de passe", "key": "wifi_password",
+                     "masked": True},
+                    {"type": "action", "label": "Se connecter",
+                     "action": "admin_wifi_connect", "color": _GREEN},
+                ]
+            if status:
+                items += [{"type": "sep"}, {"type": "info", "label": status}]
+            items += [{"type": "sep"}, {"type": "back"}]
+            return items
 
         if page == "print":
             jobs = settings.get("_print_jobs", [])
@@ -1159,7 +1190,7 @@ class PygameUI:
                 elif act == "admin_confirm_quit":
                     self.show_confirm_quit()
                 else:
-                    self._emit(act)
+                    self._emit(act, dict(settings))
             elif itype == "back":
                 self._admin_go_back(settings)
             return True
@@ -1952,8 +1983,11 @@ class PygameUI:
                 key       = item["key"]
                 is_active = self._text_editing == key
                 is_wide   = item.get("wide", False)
+                masked    = item.get("masked", False)
                 font      = self._fonts["xs"]
                 val       = str(settings.get(key, ""))
+                # Champ masqué (mot de passe) : remplace chaque caractère par ●
+                display_val = "●" * len(val) if masked else val
 
                 if is_wide:
                     # Ligne 1 : label
@@ -1965,7 +1999,7 @@ class PygameUI:
                     pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
                                      (fx, fy, fw, fh), border_radius=6)
                     # Texte : tronquer depuis le début pour afficher la fin
-                    display = val
+                    display = display_val
                     max_fw  = fw - 16
                     while font.size(display)[0] > max_fw and display:
                         display = display[1:]
@@ -1981,7 +2015,7 @@ class PygameUI:
                     fw, fh = val_w, 36
                     pygame.draw.rect(self._screen, _ACCENT if is_active else _PANEL,
                                      (fx, fy, fw, fh), border_radius=6)
-                    display = val
+                    display = display_val
                     while font.size(display)[0] > fw - 16 and display:
                         display = display[1:]
                     if is_active and int(time.time() * 2) % 2 == 0:
@@ -2013,6 +2047,7 @@ class PygameUI:
             "usb":     "EXPORT USB",
             "print":   "IMPRESSION",
             "gpio":    "DIAGNOSTIC GPIO",
+            "wifi":    "RÉSEAU WIFI",
         }
         title = page_titles.get(self._admin_page, self._admin_page.upper())
         self._txt(title, "md", _WHITE, self._w // 2, HDR_H // 2, cx=True)

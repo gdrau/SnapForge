@@ -8,6 +8,11 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Deque, List, Optional
 
+try:
+    from wifi import wifi_manager as _wifi
+except ImportError:
+    _wifi = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,6 +147,10 @@ class StateMachine:
 
         # Journal GPIO pour le diagnostic
         self._gpio_log: Deque[str] = deque(maxlen=20)
+
+        # État WiFi (persistant entre les ouvertures de la page admin)
+        self._wifi_networks: List[str] = []
+        self._wifi_status: str = ""
 
     def start(self):
         self._buttons.on_photo_button(self._on_photo_button)
@@ -602,6 +611,14 @@ class StateMachine:
             "flash_mode":    str(self._config.get("camera.flash_mode", "photo")),
             # Impression
             "_print_jobs": self._printer.get_pending_jobs() if self._printer.enabled else [],
+            # WiFi
+            "_wifi_current_ssid": _wifi.get_current_ssid() if _wifi else "",
+            "_wifi_ip":           _wifi.get_ip_address()   if _wifi else "---",
+            "wifi_networks":      list(self._wifi_networks),
+            "wifi_ssid":          self._wifi_networks[0] if self._wifi_networks
+                                  else (_wifi.get_current_ssid() if _wifi else ""),
+            "wifi_password":      "",
+            "wifi_status":        self._wifi_status,
             # Metadata UI
             "_available_templates": tpl_names,
             "_gpio_log":       list(self._gpio_log),
@@ -827,6 +844,36 @@ class StateMachine:
                 self._printer.cancel_all_jobs()
                 settings = self._build_admin_settings()
                 self._ui.update_admin_settings(settings)
+            return
+
+        if action == "admin_wifi_scan":
+            if self._state == State.ADMIN and _wifi:
+                self._wifi_status = "Recherche en cours..."
+                self._ui.update_admin_settings(self._build_admin_settings())
+                def _do_scan():
+                    networks = _wifi.scan_networks()
+                    self._wifi_networks = networks
+                    self._wifi_status = (
+                        f"{len(networks)} réseau(x) trouvé(s)" if networks
+                        else "Aucun réseau trouvé"
+                    )
+                    self._ui.update_admin_settings(self._build_admin_settings())
+                threading.Thread(target=_do_scan, daemon=True).start()
+            return
+
+        if action == "admin_wifi_connect":
+            if self._state == State.ADMIN and _wifi and isinstance(data, dict):
+                ssid     = data.get("wifi_ssid", "")
+                password = data.get("wifi_password", "")
+                self._wifi_status = f"Connexion à {ssid}..."
+                self._ui.update_admin_settings(self._build_admin_settings())
+                def _do_connect():
+                    ok, msg = _wifi.connect(ssid, password)
+                    self._wifi_status = msg
+                    if ok:
+                        self._wifi_networks = []  # forcer un nouveau scan après connexion
+                    self._ui.update_admin_settings(self._build_admin_settings())
+                threading.Thread(target=_do_connect, daemon=True).start()
             return
 
         if action == "start_session":
