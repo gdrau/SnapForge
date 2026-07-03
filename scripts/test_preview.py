@@ -234,6 +234,24 @@ while running:
                 apply_lens()
                 set_msg("Réglages remis à zéro")
 
+            elif k == pygame.K_p:
+                lines = [
+                    "\n── Valeurs à copier dans config.yaml ──────────────────",
+                    "camera:",
+                    f"  sharpness: {state['sharpness']}",
+                    f"  contrast: {state['contrast']}",
+                    f"  saturation: {state['saturation']}",
+                    f"  brightness: {state['brightness']}",
+                    f"  noise_reduction_mode: {state['nr_mode']}",
+                    f"  # exposition manuelle fixée pendant le test :",
+                    f"  # exposure_us={int(state['exposure_us'])}  gain={state['gain']:.1f}  (ISO {_iso(state['gain'])})",
+                    f"  # → dans l'app, utiliser exposure_value pour compenser la luminosité (AE auto)",
+                    f"  exposure_value: 0.0   # ajuster si trop sombre/clair (+1.0 = +1 stop)",
+                    "────────────────────────────────────────────────────────\n",
+                ]
+                print("\n".join(lines))
+                set_msg("Valeurs affichées dans le terminal  (touche P)")
+
             elif k == pygame.K_SPACE:
                 out = str(out_dir / f"preview_test_{int(time.time())}.jpg")
                 try:
@@ -373,7 +391,7 @@ while running:
         screen.blit(msg_surf, (mx, WIN_H - 28))
 
     # Raccourcis permanents
-    hints = "ESPACE = photo test    R = reset    ESC = quitter"
+    hints = "ESPACE = photo test    P = afficher valeurs config.yaml    R = reset    ESC = quitter"
     txt(screen, hints, FONT_SM, C_GRAY, WIN_W // 2, WIN_H - 28
         if time.time() >= msg_until else WIN_H - 46, center=True)
 
