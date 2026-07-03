@@ -108,6 +108,9 @@ class MockCamera:
         logger.info(f"MockCamera: capture simulee -> {output_path}")
         return output_path
 
+    def apply_exposure_settings(self):
+        pass  # pas de vrai capteur en mode PC
+
     def close(self):
         self.stop_preview()
 
@@ -247,6 +250,27 @@ class Picamera2Camera:
         self._running = False
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
+
+    def apply_exposure_settings(self):
+        """Applique immédiatement les réglages d'exposition depuis la config (sans redémarrer)."""
+        if not self._cam:
+            return
+        self._manual_exposure = bool(self._config.get("camera.manual_exposure", False))
+        try:
+            if self._manual_exposure:
+                et = int(self._config.get("camera.exposure_time_us", 100000))
+                ag = float(self._config.get("camera.analogue_gain", 1.0))
+                self._cam.set_controls({
+                    "AeEnable":     False,
+                    "ExposureTime": et,
+                    "AnalogueGain": ag,
+                })
+                logger.info(f"Exposition manuelle appliquée : {et}µs  gain={ag:.1f} (≈ISO {int(ag*100)})")
+            else:
+                self._cam.set_controls({"AeEnable": True, "AwbEnable": True})
+                logger.info("Exposition automatique rétablie")
+        except Exception as e:
+            logger.warning(f"apply_exposure_settings non bloquant : {e}")
 
     def capture(self, output_path: str) -> str:
         if not self._cam:

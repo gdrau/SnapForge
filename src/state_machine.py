@@ -686,6 +686,9 @@ class StateMachine:
         self._printer._config_enabled = bool(settings.get("print_enabled", False))
         self._uploader._enabled = bool(settings.get("cloud_enabled", False))
 
+        # Appliquer immédiatement les réglages d'exposition sans redémarrer la caméra
+        self._camera.apply_exposure_settings()
+
         logger.info(f"Admin applique: options={oa}/{ob} countdown={self._countdown_s}s "
                     f"booth='{settings.get('booth_name')}'")
 
