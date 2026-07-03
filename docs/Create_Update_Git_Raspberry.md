@@ -173,11 +173,11 @@ cd /home/guillaume/SnapForge
 # Arrêter le service
 sudo systemctl stop snapforge
 
-# Récupérer les mises à jour
-git pull
+# ⭐ Récupérer les mises à jour ET mettre à jour config.yaml (recommandé)
+source venv/bin/activate
+python scripts/update_config.py --pull
 
 # Si des dépendances ont changé
-source venv/bin/activate
 pip install -r requirements.txt
 
 # Redémarrer
@@ -187,6 +187,12 @@ sudo systemctl start snapforge
 sudo systemctl status snapforge
 journalctl -u snapforge -n 30
 ```
+
+> **Pourquoi `update_config.py --pull` plutôt que `git pull` ?**  
+> Le script fait le `git pull` **et** met à jour `config.yaml` automatiquement :
+> il détecte vos réglages personnalisés, récupère les nouvelles clés ajoutées dans
+> `config.example.yaml`, et recrée `config.yaml` en conservant vos valeurs.
+> Un backup `config_backup_YYYYMMDD_HHMMSS.yaml` est créé avant toute modification.
 
 ### Script de mise à jour rapide
 
@@ -198,10 +204,10 @@ set -e
 cd /home/guillaume/SnapForge
 echo "Arrêt du service..."
 sudo systemctl stop snapforge
-echo "Mise à jour depuis GitHub..."
-git pull
-echo "Mise à jour des dépendances..."
+echo "Mise à jour depuis GitHub (config.yaml inclus)..."
 source venv/bin/activate
+python scripts/update_config.py --pull
+echo "Mise à jour des dépendances..."
 pip install -r requirements.txt --quiet
 echo "Redémarrage..."
 sudo systemctl start snapforge
@@ -216,7 +222,64 @@ chmod +x update.sh
 
 ---
 
-## 5. Dépannage git courant
+## 5. Gérer config.yaml avec update_config.py
+
+`config.yaml` n'est **pas versionné** (gitignore) — vos réglages restent sur le Pi.
+À chaque mise à jour, `config.example.yaml` peut recevoir de nouvelles clés.
+Le script `update_config.py` gère cette synchronisation.
+
+### Trois modes d'utilisation
+
+```bash
+# Consultation seule — voir vos réglages personnalisés sans rien modifier
+python scripts/update_config.py
+
+# ⭐ Recommandé — git pull + mise à jour automatique de config.yaml
+python scripts/update_config.py --pull
+
+# Si vous avez déjà fait git pull manuellement
+python scripts/update_config.py --apply
+```
+
+### Ce que fait `--pull` étape par étape
+
+1. Lit `config.yaml` et détecte les valeurs que vous avez changées par rapport à `config.example.yaml`
+2. Crée un backup `config_backup_YYYYMMDD_HHMMSS.yaml`
+3. Lance `git pull`
+4. Recharge le nouveau `config.example.yaml` (avec les éventuelles nouvelles clés)
+5. Recrée `config.yaml` = nouvel example + vos valeurs personnalisées réinjectées
+
+### Exemple de rapport affiché
+
+```
+VALEURS PERSONNALISÉES (préservées)
+────────────────────────────────────────────────────────────
+  app.booth_name
+    défaut exemple : 'SnapForge'
+    votre valeur   : 'Mon PhotoBooth'
+  camera.flip_horizontal
+    défaut exemple : True
+    votre valeur   : False
+
+NOUVELLES CLÉS (ajoutées par la mise à jour)
+────────────────────────────────────────────────────────────
+  + camera.manual_exposure = False
+  + camera.exposure_time_us = 100000
+  + camera.analogue_gain = 1.0
+```
+
+### En cas de problème
+
+Si le `git pull` échoue, `config.yaml` n'est **pas modifié** — le backup reste inutilisé.
+Pour restaurer manuellement depuis un backup :
+
+```bash
+cp config_backup_20260703_143022.yaml config.yaml
+```
+
+---
+
+## 6. Dépannage git courant
 
 ### Dépôt corrompu (object file empty)
 
@@ -258,7 +321,7 @@ find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 ---
 
-## 6. Résumé des commandes essentielles
+## 7. Résumé des commandes essentielles
 
 | Action | Commande |
 |--------|----------|
