@@ -14,10 +14,16 @@ class Template:
         self.name: str = data["name"]
         self.width: int = data["width"]
         self.height: int = data["height"]
-        # Support background section (new) ou background_color (legacy)
+        # Support section imbriquée "background" OU clés plates (background_type, etc.)
         bg = data.get("background", {})
-        self.bg_type: str = bg.get("type", "color")
+        bg_type_flat = data.get("background_type", "")
+        self.bg_type: str = bg.get("type") or bg_type_flat or "color"
         self.bg_image_path: Optional[str] = bg.get("path")
+        self.bg_image_b64: Optional[str] = bg.get("image_b64") or (
+            data.get("background_image") if self.bg_type == "image" else None
+        )
+        grad_flat = data.get("background_gradient", {})
+        self.bg_gradient: dict = bg.get("gradient", {}) or grad_flat
         self.bg_fallback: tuple = tuple(bg.get("fallback_color",
                                         data.get("background_color", [248, 248, 248])))
         self.slots: list = data["slots"]
@@ -181,20 +187,61 @@ class Composer:
 
     def _make_background(self, template: Template, w: int, h: int) -> Image.Image:
         """Crée le canvas de fond aux dimensions demandées."""
-        if template.bg_type == "image" and template.bg_image_path:
-            p = Path(template.bg_image_path)
-            if p.exists():
+        if template.bg_type == "image":
+            if template.bg_image_path:
+                p = Path(template.bg_image_path)
+                if p.exists():
+                    try:
+                        bg = Image.open(p).convert("RGB")
+                        bg = self._fit_crop(bg, w, h)
+                        logger.debug(f"Fond image fichier : {p}")
+                        return bg
+                    except Exception as e:
+                        logger.warning(f"Fond image erreur ({p}): {e} — fallback")
+                else:
+                    logger.warning(f"Fond image introuvable : {p.resolve()} — fallback")
+            if template.bg_image_b64:
                 try:
-                    bg = Image.open(p).convert("RGB")
+                    import base64
+                    import io as _io
+                    b64_data = template.bg_image_b64
+                    if b64_data.startswith("data:"):
+                        b64_data = b64_data.split(",", 1)[1]
+                    raw = base64.b64decode(b64_data)
+                    bg = Image.open(_io.BytesIO(raw)).convert("RGB")
                     bg = self._fit_crop(bg, w, h)
-                    logger.debug(f"Fond image : {p}")
+                    logger.debug("Fond image base64 chargé")
                     return bg
                 except Exception as e:
-                    logger.warning(f"Fond image erreur ({p}): {e} — fallback couleur")
-            else:
-                logger.warning(f"Fond image introuvable : {p.resolve()} — fallback couleur")
+                    logger.warning(f"Fond image base64 erreur : {e} — fallback couleur")
+
+        elif template.bg_type == "gradient" and template.bg_gradient:
+            return self._make_gradient(template.bg_gradient, w, h, template.bg_fallback)
 
         return Image.new("RGB", (w, h), template.bg_fallback)
+
+    def _make_gradient(self, gradient: dict, w: int, h: int, fallback: tuple) -> Image.Image:
+        try:
+            start = tuple(int(v) for v in gradient.get("start_color", list(fallback)))
+            end   = tuple(int(v) for v in gradient.get("end_color",   list(fallback)))
+            direction = gradient.get("direction", "vertical")
+            img = Image.new("RGB", (w, h))
+            if direction == "horizontal":
+                # Bande de 1px de haut, étendue verticalement par resize
+                strip = Image.new("RGB", (w, 1))
+                for x in range(w):
+                    t = x / max(w - 1, 1)
+                    strip.putpixel((x, 0), tuple(int(s + (e - s) * t) for s, e in zip(start, end)))
+                return strip.resize((w, h), Image.NEAREST)
+            else:
+                strip = Image.new("RGB", (1, h))
+                for y in range(h):
+                    t = y / max(h - 1, 1)
+                    strip.putpixel((0, y), tuple(int(s + (e - s) * t) for s, e in zip(start, end)))
+                return strip.resize((w, h), Image.NEAREST)
+        except Exception as e:
+            logger.warning(f"Gradient erreur : {e} — fallback couleur")
+            return Image.new("RGB", (w, h), fallback)
 
     def _fit_crop(self, img: Image.Image, tw: int, th: int) -> Image.Image:
         src_r = img.width / img.height

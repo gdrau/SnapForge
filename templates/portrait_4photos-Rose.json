@@ -1,0 +1,41 @@
+{
+  "name": "portrait_4photos-Rose",
+  "width": 1575,
+  "height": 2362,
+  "background_color": [252, 220, 235],
+  "background_type": "gradient",
+  "background_gradient": {
+    "start_color": [255, 210, 230],
+    "end_color": [210, 50, 110],
+    "direction": "vertical"
+  },
+  "slots": [
+    {"x": 100, "y": 76,   "width": 1176, "height": 1291},
+    {"x": 1040,"y": 1595, "width": 432,  "height": 651},
+    {"x": 100, "y": 1595, "width": 451,  "height": 651},
+    {"x": 580, "y": 1595, "width": 432,  "height": 651}
+  ],
+  "title_zone": {
+    "x": 1302,
+    "y": 76,
+    "width": 214,
+    "height": 1291,
+    "size": 140,
+    "color": [255, 255, 255],
+    "align": "center",
+    "text_direction": "vertical-up",
+    "rotation": 0
+  },
+  "description_zone": {
+    "x": 108,
+    "y": 1392,
+    "width": 1364,
+    "height": 167,
+    "size": 100,
+    "color": [255, 255, 255],
+    "align": "center",
+    "rotation": 0
+  },
+  "decorations": [],
+  "text_elements": []
+}
