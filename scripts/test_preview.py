@@ -80,6 +80,16 @@ cam.configure(preview_cfg)
 cam.start()
 time.sleep(2.0)
 
+# ── ISO fixé à 100 (test) ─────────────────────────────────────────────────────
+# AeEnable=False désactive l'exposition auto pour figer le gain à 1.0 (≈ ISO 100)
+# ExposureTime en µs — adapter si l'image est trop sombre/claire (ex: 20000 = 1/50s)
+cam.set_controls({
+    "AeEnable":     False,
+    "AnalogueGain": 1.0,
+    "ExposureTime": 20000,   # 1/50s — modifier selon la luminosité
+})
+print("ISO 100 fixé (AeEnable=False, AnalogueGain=1.0, ExposureTime=20000µs)")
+
 # ── Pygame ────────────────────────────────────────────────────────────────────
 import pygame
 import numpy as np
