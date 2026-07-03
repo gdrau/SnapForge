@@ -55,6 +55,10 @@ camera:
   portrait_rotation: 0         # Angle de rotation (°) des brutes quand template portrait + caméra paysage (90 ou 270)
   flash_enabled: true          # Activer le flash pour les captures
   flash_mode: "continu"        # "photo" = flash par prise | "continu" = allumé depuis le décompte
+  # --- Exposition manuelle ---
+  manual_exposure: false       # true = désactive l'AE auto et fixe les valeurs ci-dessous
+  exposure_time_us: 100000     # Temps d'exposition en µs (100000 = 1/10s, 20000 = 1/50s)
+  analogue_gain: 1.0           # Gain analogique (1.0 ≈ ISO 100, 2.0 ≈ ISO 200, 4.0 ≈ ISO 400)
 
 gpio:
   enabled: true

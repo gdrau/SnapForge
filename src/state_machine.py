@@ -609,6 +609,10 @@ class StateMachine:
             # Flash
             "flash_enabled": bool(self._config.get("camera.flash_enabled", True)),
             "flash_mode":    str(self._config.get("camera.flash_mode", "photo")),
+            # Exposition manuelle
+            "manual_exposure":   bool(self._config.get("camera.manual_exposure", False)),
+            "exposure_time_us":  int(self._config.get("camera.exposure_time_us", 100000)),
+            "analogue_gain":     float(self._config.get("camera.analogue_gain", 1.0)),
             # Impression
             "_print_jobs": self._printer.get_pending_jobs() if self._printer.enabled else [],
             # WiFi
@@ -671,6 +675,9 @@ class StateMachine:
             "gif.delay_between_frames_seconds": float(settings.get("gif_delay_s", 1.0)),
             "camera.flash_enabled":           bool(settings.get("flash_enabled", True)),
             "camera.flash_mode":              str(settings.get("flash_mode", "photo")),
+            "camera.manual_exposure":         bool(settings.get("manual_exposure", False)),
+            "camera.exposure_time_us":        int(settings.get("exposure_time_us", 100000)),
+            "camera.analogue_gain":           float(settings.get("analogue_gain", 1.0)),
         }
         for key, val in updates.items():
             self._config.set(key, val)

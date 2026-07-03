@@ -800,6 +800,15 @@ class PygameUI:
                  "values": ["photo", "continu"],
                  "fmt": lambda v: "PHOTO" if v == "photo" else "CONTINU"},
                 {"type": "sep"},
+                {"type": "toggle", "label": "Exposition manuelle", "key": "manual_exposure",
+                 "fmt": lambda v: "ACTIVÉE" if v else "AUTO (AE)"},
+                {"type": "cycle",  "label": "Temps exposition", "key": "exposure_time_us",
+                 "values": [5000, 10000, 20000, 33333, 50000, 100000, 200000, 500000],
+                 "fmt": lambda v: f"1/{round(1e6/v)}s  ({v}µs)"},
+                {"type": "cycle",  "label": "Gain (ISO)",        "key": "analogue_gain",
+                 "values": [1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0],
+                 "fmt": lambda v: f"{v:.1f}  (≈ISO {int(v*100)})"},
+                {"type": "sep"},
                 {"type": "back"},
             ]
 

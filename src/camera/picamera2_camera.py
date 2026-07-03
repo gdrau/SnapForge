@@ -124,6 +124,7 @@ class Picamera2Camera:
         self._callback: Optional[Callable] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._manual_exposure = bool(config.get("camera.manual_exposure", False))
         self._init()
 
     def _init(self):
@@ -184,6 +185,20 @@ class Picamera2Camera:
                 except Exception as e:
                     logger.warning(f"Contrôles ISP non supportés : {e}")
 
+            # Exposition manuelle (désactive l'AE automatique si configuré)
+            if self._manual_exposure:
+                et = int(self._config.get("camera.exposure_time_us", 100000))
+                ag = float(self._config.get("camera.analogue_gain", 1.0))
+                try:
+                    self._cam.set_controls({
+                        "AeEnable":     False,
+                        "ExposureTime": et,
+                        "AnalogueGain": ag,
+                    })
+                    logger.info(f"Exposition manuelle : {et}µs  gain={ag:.1f} (≈ISO {int(ag*100)})")
+                except Exception as e:
+                    logger.warning(f"Exposition manuelle non supportée : {e}")
+
             time.sleep(2.0)  # Laisser le temps au pipeline ISP de stabiliser
 
             # Vérification : une frame doit arriver dans les 2 secondes suivantes
@@ -243,7 +258,8 @@ class Picamera2Camera:
 
         # 1. Verrouiller AE/AWB PENDANT que la preview tourne encore
         #    (capture_metadata() donne les réglages auto actuels du pipeline ISP)
-        if ae_lock:
+        #    Sans objet si exposition manuelle (AeEnable déjà False en permanence)
+        if ae_lock and not self._manual_exposure:
             try:
                 meta = self._cam.capture_metadata()
                 lock = {"AeEnable": False, "AwbEnable": False}
