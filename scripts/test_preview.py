@@ -48,13 +48,15 @@ FLIP_V = int(_cfg("camera.flip_vertical",   False))
 
 # Defaults from config (used by Reset)
 DEF = {
-    "sharpness":  float(_cfg("camera.sharpness",   1.0)),
-    "contrast":   float(_cfg("camera.contrast",    1.0)),
-    "saturation": float(_cfg("camera.saturation",  1.0)),
-    "brightness": float(_cfg("camera.brightness",  0.0)),
-    "ev":         float(_cfg("camera.exposure_value", 0.0)),
-    "nr_mode":    int  (_cfg("camera.noise_reduction_mode", 1)),
-    "lens_pos":   1.0,
+    "sharpness":   float(_cfg("camera.sharpness",   1.0)),
+    "contrast":    float(_cfg("camera.contrast",    1.0)),
+    "saturation":  float(_cfg("camera.saturation",  1.0)),
+    "brightness":  float(_cfg("camera.brightness",  0.0)),
+    "ev":          float(_cfg("camera.exposure_value", 0.0)),
+    "nr_mode":     int  (_cfg("camera.noise_reduction_mode", 1)),
+    "lens_pos":    1.0,
+    "exposure_us": 100000,   # temps d'exposition en µs (ISO fixé)
+    "gain":        1.0,      # AnalogueGain (1.0 ≈ ISO 100)
 }
 
 # ── Picamera2 ─────────────────────────────────────────────────────────────────
@@ -86,9 +88,9 @@ time.sleep(2.0)
 cam.set_controls({
     "AeEnable":     False,
     "AnalogueGain": 1.0,
-    "ExposureTime": 20000,   # 1/50s — modifier selon la luminosité
+    "ExposureTime": 100000,  # 1/10s — ajustable via ↑/↓ en mode Qualité (param Exposition)
 })
-print("ISO 100 fixé (AeEnable=False, AnalogueGain=1.0, ExposureTime=20000µs)")
+print("ISO 100 fixé (AeEnable=False, AnalogueGain=1.0, ExposureTime=100000µs)")
 
 # ── Pygame ────────────────────────────────────────────────────────────────────
 import pygame
@@ -139,14 +141,17 @@ quality_sel = 0   # index du réglage sélectionné en mode qualité
 
 # Méta-descripteur des réglages qualité
 QUALITY_PARAMS = [
-    {"key": "sharpness",  "label": "Netteté",    "min": 0.0,  "max": 16.0, "step": 0.1,  "fmt": ".1f"},
-    {"key": "contrast",   "label": "Contraste",  "min": 0.5,  "max": 2.0,  "step": 0.05, "fmt": ".2f"},
-    {"key": "saturation", "label": "Saturation", "min": 0.0,  "max": 2.0,  "step": 0.1,  "fmt": ".1f"},
-    {"key": "brightness", "label": "Luminosité", "min": -1.0, "max": 1.0,  "step": 0.05, "fmt": ".2f"},
-    {"key": "ev",         "label": "EV",         "min": -4.0, "max": 4.0,  "step": 0.25, "fmt": ".2f"},
-    {"key": "nr_mode",    "label": "Débruitage", "min": 0,    "max": 2,    "step": 1,    "fmt": "int"},
+    {"key": "exposure_us", "label": "Exposition µs", "min": 1000,  "max": 1000000, "step": 5000,  "fmt": "int_us"},
+    {"key": "gain",        "label": "Gain (ISO)",    "min": 1.0,   "max": 16.0,    "step": 0.5,   "fmt": "gain"},
+    {"key": "sharpness",   "label": "Netteté",       "min": 0.0,   "max": 16.0,    "step": 0.1,   "fmt": ".1f"},
+    {"key": "contrast",    "label": "Contraste",     "min": 0.5,   "max": 2.0,     "step": 0.05,  "fmt": ".2f"},
+    {"key": "saturation",  "label": "Saturation",    "min": 0.0,   "max": 2.0,     "step": 0.1,   "fmt": ".1f"},
+    {"key": "brightness",  "label": "Luminosité",    "min": -1.0,  "max": 1.0,     "step": 0.05,  "fmt": ".2f"},
+    {"key": "nr_mode",     "label": "Débruitage",    "min": 0,     "max": 2,       "step": 1,     "fmt": "int"},
 ]
 NR_LABELS = {0: "DÉSACTIVÉ", 1: "RAPIDE", 2: "HAUTE QUALITÉ"}
+
+def _iso(gain): return int(round(gain * 100))
 
 af_mode_label = "Manuel"
 last_msg      = ""
@@ -157,11 +162,13 @@ out_dir.mkdir(parents=True, exist_ok=True)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def apply_quality():
     ctrl = {
+        "AeEnable":           False,
+        "ExposureTime":       int(state["exposure_us"]),
+        "AnalogueGain":       float(state["gain"]),
         "Sharpness":          state["sharpness"],
         "Contrast":           state["contrast"],
         "Saturation":         state["saturation"],
         "Brightness":         state["brightness"],
-        "ExposureValue":      state["ev"],
         "NoiseReductionMode": state["nr_mode"],
     }
     try:
@@ -193,6 +200,11 @@ def txt(surface, text, font, color, x, y, center=False):
 def fmt_val(p, val):
     if p["fmt"] == "int":
         return NR_LABELS.get(int(val), str(int(val)))
+    if p["fmt"] == "int_us":
+        us = int(val)
+        return f"{us} µs  (1/{int(1e6/us)}s)" if us > 0 else "0"
+    if p["fmt"] == "gain":
+        return f"{val:.1f}  (ISO {_iso(val)})"
     return f"{val:{p['fmt']}}"
 
 # ── Boucle principale ─────────────────────────────────────────────────────────
