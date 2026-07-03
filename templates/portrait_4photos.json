@@ -39,9 +39,9 @@
     "height": 1291,
     "size": 140,
     "color": [
-      30,
-      30,
-      30
+      0,
+      0,
+      0
     ],
     "align": "center",
     "text_direction": "vertical-up",
@@ -54,9 +54,9 @@
     "height": 167,
     "size": 100,
     "color": [
-      100,
-      100,
-      100
+      0,
+      0,
+      0
     ],
     "align": "center",
     "rotation": 0
