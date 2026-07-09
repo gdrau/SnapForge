@@ -130,6 +130,34 @@ class Picamera2Camera:
         self._manual_exposure = bool(config.get("camera.manual_exposure", False))
         self._init()
 
+    def _isp_controls(self) -> dict:
+        """Contrôles ISP (netteté, contraste, etc.) lus depuis la config.
+
+        Utilisés à l'init (preview) ET injectés dans la config de capture still,
+        sinon create_still_configuration() réimpose ses défauts libcamera
+        (Sharpness=1.0 neutre, NoiseReductionMode=HighQuality qui lisse fort)
+        et les réglages n'atteignent jamais la photo finale.
+        """
+        controls: dict = {}
+        sharpness = float(self._config.get("camera.sharpness", 1.0))
+        if sharpness != 1.0:
+            controls["Sharpness"] = sharpness
+        # Débruitage : 0=désactivé 1=rapide 2=haute qualité
+        controls["NoiseReductionMode"] = int(self._config.get("camera.noise_reduction_mode", 1))
+        contrast = float(self._config.get("camera.contrast", 1.0))
+        if contrast != 1.0:
+            controls["Contrast"] = contrast
+        saturation = float(self._config.get("camera.saturation", 1.0))
+        if saturation != 1.0:
+            controls["Saturation"] = saturation
+        brightness = float(self._config.get("camera.brightness", 0.0))
+        if brightness != 0.0:
+            controls["Brightness"] = brightness
+        ev = float(self._config.get("camera.exposure_value", 0.0))
+        if ev != 0.0:
+            controls["ExposureValue"] = ev
+        return controls
+
     def _init(self):
         try:
             self._cam = Picamera2()
@@ -158,30 +186,7 @@ class Picamera2Camera:
             self._cam.start()
 
             # Contrôles ISP post-démarrage
-            controls = {}
-            # Netteté
-            sharpness = float(self._config.get("camera.sharpness", 1.0))
-            if sharpness != 1.0:
-                controls["Sharpness"] = sharpness
-            # Débruitage : 0=désactivé 1=rapide 2=haute qualité
-            nr_mode = int(self._config.get("camera.noise_reduction_mode", 1))
-            controls["NoiseReductionMode"] = nr_mode
-            # Contraste
-            contrast = float(self._config.get("camera.contrast", 1.0))
-            if contrast != 1.0:
-                controls["Contrast"] = contrast
-            # Saturation
-            saturation = float(self._config.get("camera.saturation", 1.0))
-            if saturation != 1.0:
-                controls["Saturation"] = saturation
-            # Luminosité
-            brightness = float(self._config.get("camera.brightness", 0.0))
-            if brightness != 0.0:
-                controls["Brightness"] = brightness
-            # Compensation d'exposition (EV)
-            ev = float(self._config.get("camera.exposure_value", 0.0))
-            if ev != 0.0:
-                controls["ExposureValue"] = ev
+            controls = self._isp_controls()
             if controls:
                 try:
                     self._cam.set_controls(controls)
@@ -324,6 +329,12 @@ class Picamera2Camera:
                 still_kwargs["raw"] = {"size": self._cam.sensor_resolution}
             except Exception:
                 pass
+            # Injecter nos contrôles ISP DANS la config still, sinon
+            # create_still_configuration() réimpose ses défauts (NR HighQuality
+            # qui lisse, Sharpness neutre) et nos réglages sont perdus.
+            still_controls = self._isp_controls()
+            if still_controls:
+                still_kwargs["controls"] = still_controls
             still_cfg = self._cam.create_still_configuration(
                 main={"size": (cw, ch), "format": "RGB888"},
                 **still_kwargs
