@@ -317,6 +317,13 @@ class Picamera2Camera:
 
         try:
             still_kwargs = {"transform": self._transform} if self._transform else {}
+            # Forcer le mode capteur PLEINE résolution (raw = sensor_resolution).
+            # Sans cela, libcamera peut choisir un mode "binné" (fusion 2x2) plus doux.
+            # Recommandation officielle picamera2 pour retrouver le piqué du stack legacy.
+            try:
+                still_kwargs["raw"] = {"size": self._cam.sensor_resolution}
+            except Exception:
+                pass
             still_cfg = self._cam.create_still_configuration(
                 main={"size": (cw, ch), "format": "RGB888"},
                 **still_kwargs

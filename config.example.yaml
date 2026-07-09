@@ -40,8 +40,10 @@ camera:
   flip_horizontal: true
   flip_vertical: false
   # --- ISP qualité image ---
-  sharpness: 1.0               # Netteté    (0.0-16.0, 1.0 = défaut)
-  contrast: 1.0                # Contraste  (0.5-2.0,  1.0 = défaut)
+  # Netteté : libcamera est TRÈS doux par défaut (1.0). Le stack legacy (pibooth/raspistill)
+  # accentue fortement dans le firmware -> monter à 2.0-4.0 pour un piqué équivalent.
+  sharpness: 2.5               # Netteté    (0.0-16.0, 1.0 = neutre/doux, 2.5 = piqué type legacy)
+  contrast: 1.1                # Contraste  (0.5-2.0,  1.0 = neutre, 1.1 = léger punch)
   saturation: 1.0              # Saturation (0.0-2.0,  1.0 = défaut)
   brightness: 0.0              # Luminosité (-1.0 à 1.0, 0.0 = neutre)
   exposure_value: 0.0          # Compensation EV (-4.0 à 4.0, 0.0 = aucune)
