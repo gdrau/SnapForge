@@ -115,6 +115,13 @@ class Composer:
         usm_threshold = int(self._config.get("processing.usm_threshold",   3))
         usm_enabled   = bool(self._config.get("processing.usm_enabled",  True))
 
+        # Point noir : libcamera laisse des noirs délavés (voile gris ~8/255).
+        # black_point remappe [bp,255]->[0,255] pour écraser les noirs = image "punchy"
+        # comme le stack legacy. 0 = désactivé.
+        black_point = int(self._config.get("processing.black_point", 0))
+        # Correction couleur douce : compense la dominante (ex: vert/froid de libcamera)
+        wb_gains = self._config.get("processing.wb_gains", None)  # [r, g, b] multiplicateurs
+
         # Photos — slots agrandis par scale : utilise plus de pixels sources
         for i, photo_path in enumerate(photo_paths):
             slot = template.slot(i)
@@ -131,6 +138,7 @@ class Composer:
                     photo = photo.filter(ImageFilter.UnsharpMask(
                         radius=usm_radius, percent=usm_percent, threshold=usm_threshold
                     ))
+                photo = self._apply_tone(photo, black_point, wb_gains)
                 canvas.paste(photo, (sx, sy))
             except Exception as e:
                 logger.error(f"Erreur placement photo {photo_path}: {e}")
@@ -254,6 +262,26 @@ class Composer:
         left = (new_w - tw) // 2
         top = (new_h - th) // 2
         return img.crop((left, top, left + tw, top + th))
+
+    def _apply_tone(self, img: Image.Image, black_point: int, wb_gains) -> Image.Image:
+        """Écrase les noirs délavés (black_point) et corrige une dominante (wb_gains).
+
+        black_point : remappe linéairement [bp,255] -> [0,255] (bp=0 -> désactivé).
+        wb_gains    : liste [r, g, b] de multiplicateurs par canal (None -> aucun).
+        Déterministe : même correction pour toutes les photos (pas de surprise couleur).
+        """
+        if black_point and black_point > 0:
+            bp = min(black_point, 64)
+            scale = 255.0 / (255 - bp)
+            lut = [max(0, min(255, int((v - bp) * scale))) for v in range(256)]
+            img = img.point(lut * 3)
+        if wb_gains and len(wb_gains) == 3:
+            gr, gg, gb = (float(x) for x in wb_gains)
+            lut_r = [max(0, min(255, int(v * gr))) for v in range(256)]
+            lut_g = [max(0, min(255, int(v * gg))) for v in range(256)]
+            lut_b = [max(0, min(255, int(v * gb))) for v in range(256)]
+            img = img.point(lut_r + lut_g + lut_b)
+        return img
 
     def _apply_overlay(self, canvas, path, w, h):
         p = Path(path)

@@ -84,12 +84,15 @@ templates:
 
 processing:
   jpeg_quality: 97
-  output_scale: 1.5    # Facteur d'agrandissement du rendu final (1.0 = dimensions template, 1.5 ≈ 2400×3600, 2.0 = qualité max)
-  output_dpi: 600      # Métadonnée DPI inscrite dans le JPEG (0 = aucune, 300 = print-ready, 600 = haute qualité)
+  output_scale: 1.0    # Agrandissement du rendu final. 1.0 = dimensions template (~400dpi, la photo est RÉDUITE dans le slot = NET). >1.0 suréchantillonne au-delà du détail capteur ET de l'imprimante (Canon SELPHY = 300dpi) => RAMOLLIT. Laisser 1.0.
+  output_dpi: 300      # Métadonnée DPI inscrite dans le JPEG (300 = print-ready pour SELPHY)
   usm_enabled: true    # Unsharp Mask après redimensionnement (restaure la netteté perdue au resize)
   usm_radius: 1.0      # Rayon USM en pixels (0.5-2.0)
-  usm_percent: 160     # Intensité USM en % (80-200 — valeurs élevées amplifient le grain)
+  usm_percent: 120     # Intensité USM en % (80-200 — valeurs élevées amplifient le grain/halos)
   usm_threshold: 6     # Seuil USM — ignore les zones sous ce contraste (3-10, plus élevé = moins de grain)
+  # --- Rendu "punchy" type legacy/pibooth (mesuré : libcamera laisse noirs délavés + dominante verte) ---
+  black_point: 8       # Écrase les noirs délavés : remappe [bp,255]->[0,255]. 0 = désactivé. ~8 mesuré vs pibooth.
+  wb_gains: [1.22, 1.0, 1.05]  # Correction couleur [R,G,B] : compense la dominante vert/froid de libcamera. [1,1,1] ou vide = aucune.
   final_width: 1800    # Utilisé uniquement sans template (mode auto)
   final_height: 1200   # Utilisé uniquement sans template (mode auto)
   font_path: assets/fonts/AmaticSC-Bold.ttf  # Police pour les textes sur la photo finale (titre/description)
