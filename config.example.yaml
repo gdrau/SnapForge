@@ -84,8 +84,8 @@ templates:
 
 processing:
   jpeg_quality: 97
-  output_scale: 1.0    # Agrandissement du rendu final. 1.0 = dimensions template (~400dpi, la photo est RÉDUITE dans le slot = NET). >1.0 suréchantillonne au-delà du détail capteur ET de l'imprimante (Canon SELPHY = 300dpi) => RAMOLLIT. Laisser 1.0.
-  output_dpi: 300      # Métadonnée DPI inscrite dans le JPEG (300 = print-ready pour SELPHY)
+  output_scale: 1.4    # Agrandissement du rendu final. Idéal : slot photo ≈ résolution brute (2464px). 1.4 -> slot 1734px devient 2428px ≈ brute = TOUTE la résolution capteur préservée, sans agrandissement inventé. 1.0 réduirait la photo (perte ~30% détail) ; >1.5 agrandit au-delà du réel (inutile).
+  output_dpi: 300      # Métadonnée DPI inscrite dans le JPEG (l'imprimante SELPHY ajuste à la taille papier)
   usm_enabled: true    # Unsharp Mask après redimensionnement (restaure la netteté perdue au resize)
   usm_radius: 1.0      # Rayon USM en pixels (0.5-2.0)
   usm_percent: 120     # Intensité USM en % (80-200 — valeurs élevées amplifient le grain/halos)
