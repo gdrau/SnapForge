@@ -182,6 +182,7 @@ class Picamera2Camera:
                 raw={"size": (cw, ch)},
                 **cfg_kwargs
             )
+            self._preview_cfg = cfg
             self._cam.configure(cfg)
             self._cam.start()
 
@@ -209,15 +210,27 @@ class Picamera2Camera:
 
             time.sleep(2.0)  # Laisser le temps au pipeline ISP de stabiliser
 
-            # Vérification : une frame doit arriver dans les 2 secondes suivantes
-            # Si la caméra a eu un timeout Unicam, elle devrait s'être rétablie ici
+            # Init ISP : sur IMX219, la preview sort corrompue (teinte magenta +
+            # orientation incorrecte) tant qu'aucun switch de mode n'a eu lieu.
+            # On force un switch de mode à vide (identique à la 1ère photo) pour
+            # que l'ISP soit déjà initialisé quand l'utilisateur voit la preview.
+            # Sert aussi de vérification : une frame doit arriver ici.
             try:
-                test = self._cam.capture_array()
+                still_kwargs = {"transform": self._transform} if self._transform else {}
+                try:
+                    still_kwargs["raw"] = {"size": self._cam.sensor_resolution}
+                except Exception:
+                    pass
+                warmup_cfg = self._cam.create_still_configuration(
+                    main={"size": (cw, ch), "format": "RGB888"},
+                    **still_kwargs
+                )
+                test = self._cam.switch_mode_and_capture_array(warmup_cfg)
                 h, w = test.shape[:2]
-                logger.info(f"Picamera2 initialisee et operationnelle ({w}x{h}px)")
+                logger.info(f"Picamera2 initialisee et operationnelle — ISP amorcé ({w}x{h}px)")
             except Exception as test_err:
                 logger.warning(
-                    f"ATTENTION : premiere frame non recue ({test_err})\n"
+                    f"ATTENTION : amorçage ISP échoué ({test_err})\n"
                     "  → Verifier le cable nappe de la camera (les deux extremites)\n"
                     "  → Tester independamment : libcamera-hello --timeout 5000"
                 )
